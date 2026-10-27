@@ -1,7 +1,7 @@
 {
   "name": "autolearn",
   "owner": {
-    "name": "nikserbur",
+    "name": "Nikita Burakov",
     "url": "https://github.com/nikserbur"
   },
   "description": "autolearn: a Claude Code harness that learns from your feedback, reviews and escaped bugs.",
