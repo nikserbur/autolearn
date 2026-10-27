@@ -1,0 +1,33 @@
+{
+  "name": "autolearn",
+  "owner": {
+    "name": "nikserbur",
+    "url": "https://github.com/nikserbur"
+  },
+  "description": "autolearn: a Claude Code harness that learns from your feedback, reviews and escaped bugs.",
+  "plugins": [
+    {
+      "name": "autolearn",
+      "source": "./",
+      "description": "Self-learning harness for Claude Code: multi-agent delivery pipeline with a fresh-context merge gate, evidence-backed lessons, auto-grown reviewers, a routed local knowledge base and a skill/MCP gap radar.",
+      "category": "development",
+      "license": "MIT",
+      "tags": [
+        "self-learning",
+        "code-review",
+        "knowledge-base",
+        "subagents",
+        "workflow"
+      ],
+      "keywords": [
+        "claude-code",
+        "self-learning",
+        "continual-learning",
+        "context-router",
+        "merge-gate",
+        "subagents",
+        "tdd"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,43 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        python: ["3.9", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Validate structure
+        run: python3 scripts/validate.py
+      - name: Unit tests (hooks and scripts)
+        run: python3 -m unittest discover -s tests -v
+      - name: Installer round trip in a sandbox
+        run: |
+          sandbox="$(mktemp -d)/claude"
+          ./install.sh --claude-dir "$sandbox" --with-claude-md --deny-push
+          ./install.sh --claude-dir "$sandbox"          # idempotent
+          ./uninstall.sh --claude-dir "$sandbox"
+          if grep -q 'hooks/autolearn/' "$sandbox/settings.json"; then echo "hooks left in settings"; exit 1; fi
+          if grep -q 'autolearn:start' "$sandbox/CLAUDE.md"; then echo "CLAUDE.md block left"; exit 1; fi
+      - name: Installer protects and restores a clashing user file
+        run: |
+          sandbox="$(mktemp -d)/claude"
+          mkdir -p "$sandbox/skills/learn" && echo mine > "$sandbox/skills/learn/SKILL.md"
+          if ./install.sh --claude-dir "$sandbox"; then echo "should have stopped on the clash"; exit 1; fi
+          [ "$(cat "$sandbox/skills/learn/SKILL.md")" = mine ]
+          ./install.sh --claude-dir "$sandbox" --force
+          ./uninstall.sh --claude-dir "$sandbox"
+          [ "$(cat "$sandbox/skills/learn/SKILL.md")" = mine ]

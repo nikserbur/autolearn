@@ -1,0 +1,27 @@
+{
+  "name": "autolearn",
+  "displayName": "autolearn",
+  "version": "0.1.0",
+  "description": "Self-learning harness for Claude Code: a plan, TDD, review and merge-gate pipeline that turns escaped bugs, review findings and your corrections into lessons, regression tests and new reviewer agents, plus a routed local knowledge base and a skill gap radar.",
+  "author": {
+    "name": "nikserbur",
+    "url": "https://github.com/nikserbur"
+  },
+  "homepage": "https://github.com/nikserbur/autolearn",
+  "repository": "https://github.com/nikserbur/autolearn",
+  "license": "MIT",
+  "keywords": [
+    "claude-code",
+    "self-learning",
+    "continual-learning",
+    "subagents",
+    "multi-agent",
+    "code-review",
+    "tdd",
+    "knowledge-base",
+    "agent-memory",
+    "context-engineering",
+    "hooks",
+    "skills"
+  ]
+}

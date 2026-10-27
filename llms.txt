@@ -1,0 +1,18 @@
+# autolearn
+
+> A self-learning harness for Claude Code: a 12-agent delivery pipeline (plan, critique, TDD under a verify gate, fresh-context review and merge gate) that turns user corrections, review findings and escaped bugs into evidence-backed lessons, new reviewer agents and new skills, plus a local knowledge base built together with a topic-map context router and a skill/MCP gap radar. Python standard library only; installs as a Claude Code plugin or via install.sh.
+
+## Start here
+- [README](README.md): what it does, quick start, components
+- [Learning loop](docs/learning-loop.md): signals, lessons, promotion ladder, "missed a bug? add a reviewer"
+- [Knowledge router](docs/knowledge-router.md): building the knowledge base with its router, budgets
+- [Pipeline](docs/pipeline.md): /feature roles, modes and artifacts
+- [Hooks](docs/hooks.md): every hook, its event, scope and environment variables
+- [Components](docs/components.md): every agent, skill, hook and script
+- [Comparison](docs/comparison.md): dated comparison with related projects
+
+## Components
+- [agents/](agents/): al-planner, al-plan-critic, al-code-scout, al-docs-scout, al-implementer, al-test-writer, al-code-reviewer, al-doc-writer, al-merge-gate, al-lessons-keeper, al-escape-analyst, al-skill-scout
+- [skills/](skills/): feature, merge-check, learn, retro, skill-radar, kb-router, kb-ingest, colleague-message, pr-description, git-handoff
+- [hooks/](hooks/): check_secrets, capture_feedback, session_brief, verify_gate, test_output_filter, planner_guard
+- [templates/](templates/): CLAUDE.md routing table, topic map, required docs, lessons, message style

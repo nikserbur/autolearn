@@ -1,0 +1,20 @@
+name: Feature or learning idea
+description: A new signal, guard, reviewer archetype, router improvement or skill
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What keeps going wrong (or what you keep doing by hand)
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence
+      description: A run artifact, a merge-gate finding, a lessons line, a radar gap. Redact private details.
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed guard or change
+      description: Which rung of the ladder (test, hook, rule, prompt patch, new agent/skill) and why that one.

@@ -1,0 +1,441 @@
+{
+  "_about": "Feedback patterns for hooks/capture_feedback.py in 15 languages. English is built into the hook; the other 14 live here. Each language has regexes per signal kind and examples that tests/test_hooks.py checks: every example must trigger its kind, every 'neutral' example must trigger nothing. Optional: \"enabled\": [\"ru\", \"de\"] limits which languages are used (default: all). Edit your copy in ~/.claude/autolearn/feedback-patterns.json; delete it to get the latest set on the next session.",
+  "languages": {
+    "en": {
+      "name": "English",
+      "patterns": {},
+      "examples": {
+        "correction": "No, I said use uv",
+        "rule": "From now on, always run the tests first",
+        "approval": "Perfect, exactly what I wanted",
+        "escaped_bug": "The reviewer missed it, bug in prod",
+        "neutral": "Add a CSV export to the report page"
+      }
+    },
+    "zh": {
+      "name": "Chinese",
+      "patterns": {
+        "correction": [
+          "不对",
+          "不是这样",
+          "错了",
+          "我(已经)?说过",
+          "别(用|改|加)"
+        ],
+        "rule": [
+          "以后(都|一律|总是)",
+          "永远不要",
+          "每次都",
+          "从现在开始"
+        ],
+        "approval": [
+          "完美",
+          "就是这样",
+          "做得好"
+        ],
+        "escaped_bug": [
+          "漏掉了.{0,6}(bug|错误|问题)",
+          "(线上|生产环境)(出了|有)?.{0,4}(bug|问题|故障)",
+          "(评审|代码审查|review).{0,6}没(发现|看出|抓到)"
+        ]
+      },
+      "examples": {
+        "correction": "不对，不是这样，用 uv",
+        "rule": "从现在开始，每次都先跑测试",
+        "approval": "完美，就是这样",
+        "escaped_bug": "代码审查没发现，线上出了 bug",
+        "neutral": "在报告页面加一个 CSV 导出"
+      }
+    },
+    "es": {
+      "name": "Spanish",
+      "patterns": {
+        "correction": [
+          "\\bas[ií] no\\b",
+          "\\beso (est[aá] mal|no es)\\b",
+          "\\bte (dije|ped[ií])\\b",
+          "\\best[aá] mal\\b"
+        ],
+        "rule": [
+          "\\b(siempre|nunca|a partir de ahora|de ahora en adelante|cada vez)\\b"
+        ],
+        "approval": [
+          "\\b(perfecto|exacto|eso es|buen estilo|muy bien)\\b"
+        ],
+        "escaped_bug": [
+          "\\bbug en producci[oó]n\\b",
+          "\\b(se te|se le|el reviewer|la revisi[oó]n) (pas[oó]|escap[oó]|no (vio|detect[oó]))"
+        ]
+      },
+      "examples": {
+        "correction": "No, así no: usa uv",
+        "rule": "A partir de ahora, ejecuta siempre los tests",
+        "approval": "Perfecto, eso es",
+        "escaped_bug": "Se te pasó un bug en producción",
+        "neutral": "Añade una exportación CSV a la página del informe"
+      }
+    },
+    "pt": {
+      "name": "Portuguese",
+      "patterns": {
+        "correction": [
+          "^\\s*n[ãa]o[,.!\\s]",
+          "\\bassim n[ãa]o\\b",
+          "\\best[áa] errado\\b",
+          "\\beu (te )?(disse|pedi)\\b"
+        ],
+        "rule": [
+          "\\b(sempre|nunca|a partir de agora|daqui pra frente|daqui para a frente|toda vez)\\b"
+        ],
+        "approval": [
+          "\\b(perfeito|exatamente|isso mesmo|muito bem|bom estilo)\\b"
+        ],
+        "escaped_bug": [
+          "\\bbug em produ[çc][ãa]o\\b",
+          "\\b(passou|escapou) (um|o) bug\\b",
+          "\\b(o revisor|a revis[ãa]o|o review) n[ãa]o (pegou|viu)\\b"
+        ]
+      },
+      "examples": {
+        "correction": "Não, assim não: use uv",
+        "rule": "A partir de agora, rode sempre os testes",
+        "approval": "Perfeito, isso mesmo",
+        "escaped_bug": "O revisor não pegou, bug em produção",
+        "neutral": "Adicione uma exportação CSV na página do relatório"
+      }
+    },
+    "ru": {
+      "name": "Russian",
+      "patterns": {
+        "correction": [
+          "^\\s*нет[,.!\\s]",
+          "\\bне так\\b",
+          "\\bне надо\\b",
+          "\\bнеправильно\\b",
+          "\\bя же (сказал|сказала|просил|просила)",
+          "\\bзачем ты\\b"
+        ],
+        "rule": [
+          "\\b(всегда|никогда|впредь|каждый раз|с этого момента)\\b"
+        ],
+        "approval": [
+          "\\b(отлично|идеально|именно так|хороший стиль|так и делай)"
+        ],
+        "escaped_bug": [
+          "\\bпропустил[аи]? (баг|ошибк)",
+          "\\bбаг в проде",
+          "\\bревью\\w* не (заметил|заметила|поймал|поймала)"
+        ]
+      },
+      "examples": {
+        "correction": "Нет, не так: используй uv",
+        "rule": "Впредь всегда запускай тесты",
+        "approval": "Отлично, именно так",
+        "escaped_bug": "Ревьюер не поймал, баг в проде",
+        "neutral": "Добавь экспорт в CSV на страницу отчёта"
+      }
+    },
+    "ja": {
+      "name": "Japanese",
+      "patterns": {
+        "correction": [
+          "違う",
+          "そうじゃない",
+          "そうではなく",
+          "言ったはず",
+          "間違って(いる|る)"
+        ],
+        "rule": [
+          "今後は",
+          "これからは",
+          "二度と",
+          "毎回"
+        ],
+        "approval": [
+          "完璧",
+          "その通り",
+          "素晴らしい"
+        ],
+        "escaped_bug": [
+          "本番で.{0,6}(バグ|不具合|障害)",
+          "(バグ|不具合)を見逃",
+          "レビューで.{0,6}(見逃|気づかな)"
+        ]
+      },
+      "examples": {
+        "correction": "違う、そうじゃない。uv を使って",
+        "rule": "今後は必ずテストを実行して",
+        "approval": "完璧、その通り",
+        "escaped_bug": "レビューで見逃して、本番でバグが出た",
+        "neutral": "レポート画面に CSV エクスポートを追加して"
+      }
+    },
+    "de": {
+      "name": "German",
+      "patterns": {
+        "correction": [
+          "^\\s*nein\\b",
+          "\\bdas ist (falsch|nicht richtig)\\b",
+          "\\bso nicht\\b",
+          "\\bich (hab|habe) (doch |es )?gesagt\\b",
+          "\\bstimmt nicht\\b"
+        ],
+        "rule": [
+          "\\b(immer|niemals|nie wieder|ab jetzt|von nun an|jedes mal)\\b"
+        ],
+        "approval": [
+          "\\b(perfekt|genau so|super gemacht|guter stil|sehr gut)\\b"
+        ],
+        "escaped_bug": [
+          "\\b(bug|fehler) (in|auf) (der )?(produktion|prod)\\b",
+          "\\b(übersehen|nicht bemerkt)\\b"
+        ]
+      },
+      "examples": {
+        "correction": "Nein, so nicht: nimm uv",
+        "rule": "Ab jetzt immer die Tests laufen lassen",
+        "approval": "Perfekt, genau so",
+        "escaped_bug": "Der Reviewer hat das übersehen, Bug in Produktion",
+        "neutral": "Füge der Berichtsseite einen CSV-Export hinzu"
+      }
+    },
+    "fr": {
+      "name": "French",
+      "patterns": {
+        "correction": [
+          "^\\s*non\\b(?!-)",
+          "\\bc'?est (faux|pas ça|pas ce que)",
+          "\\bpas comme (ça|ca)\\b",
+          "\\bje t'?ai (dit|demandé)\\b"
+        ],
+        "rule": [
+          "\\b(toujours|jamais|désormais|dorénavant|à partir de maintenant|à chaque fois)\\b"
+        ],
+        "approval": [
+          "\\b(parfait|exactement|c'?est ça|bien joué|bon style)\\b"
+        ],
+        "escaped_bug": [
+          "\\bbug en prod",
+          "\\b(tu as|vous avez|le reviewer a|la revue a) (raté|manqué)\\b"
+        ]
+      },
+      "examples": {
+        "correction": "Non, pas comme ça : utilise uv",
+        "rule": "Désormais, lance toujours les tests",
+        "approval": "Parfait, exactement",
+        "escaped_bug": "Le reviewer a raté ça, bug en prod",
+        "neutral": "Ajoute un export CSV à la page du rapport"
+      }
+    },
+    "ko": {
+      "name": "Korean",
+      "patterns": {
+        "correction": [
+          "^\\s*아니(요|야)?\\b",
+          "그게 아니",
+          "틀렸",
+          "이렇게 말고",
+          "말했잖아"
+        ],
+        "rule": [
+          "항상",
+          "앞으로는",
+          "절대",
+          "매번"
+        ],
+        "approval": [
+          "완벽",
+          "바로 그거",
+          "잘했어"
+        ],
+        "escaped_bug": [
+          "(운영|프로덕션)(에서|환경에서)? .{0,6}(버그|장애)",
+          "(리뷰|리뷰어).{0,6}(놓쳤|못 잡았|발견하지 못)",
+          "버그를 놓쳤"
+        ]
+      },
+      "examples": {
+        "correction": "아니요, 그게 아니라 uv를 써요",
+        "rule": "앞으로는 항상 테스트를 먼저 돌려요",
+        "approval": "완벽해요, 바로 그거예요",
+        "escaped_bug": "리뷰어가 놓쳤고 운영에서 버그가 났어요",
+        "neutral": "보고서 페이지에 CSV 내보내기를 추가해 주세요"
+      }
+    },
+    "it": {
+      "name": "Italian",
+      "patterns": {
+        "correction": [
+          "\\bnon (così|cosi)\\b",
+          "\\bè sbagliato\\b",
+          "\\bti ho (detto|chiesto)\\b",
+          "\\bnon è (quello|questo) che\\b"
+        ],
+        "rule": [
+          "\\b(sempre|mai più|d'ora in poi|da ora in poi|ogni volta)\\b"
+        ],
+        "approval": [
+          "\\b(perfetto|esattamente|proprio così|ottimo lavoro|bello stile)\\b"
+        ],
+        "escaped_bug": [
+          "\\bbug in produzione\\b",
+          "\\b(il revisore|la review|la revisione) non (l'?ha )?(visto|notato)",
+          "\\b(ti è|gli è) sfuggito\\b"
+        ]
+      },
+      "examples": {
+        "correction": "No, non così: usa uv",
+        "rule": "D'ora in poi esegui sempre i test",
+        "approval": "Perfetto, proprio così",
+        "escaped_bug": "Il revisore non l'ha visto, bug in produzione",
+        "neutral": "Aggiungi un'esportazione CSV alla pagina del report"
+      }
+    },
+    "tr": {
+      "name": "Turkish",
+      "patterns": {
+        "correction": [
+          "^\\s*hay[ıi]r\\b",
+          "\\bböyle de[ğg]il\\b",
+          "\\byanl[ıi]ş\\b",
+          "\\bsana (söyledim|dedim)\\b"
+        ],
+        "rule": [
+          "\\b(her zaman|asla|bundan sonra|her seferinde)\\b"
+        ],
+        "approval": [
+          "\\b(mükemmel|harika|aynen böyle|tam olarak)\\b"
+        ],
+        "escaped_bug": [
+          "\\b(canlıda|prodda) (bug|hata)",
+          "\\b(gözden kaçırdın|gözden kaçtı)\\b",
+          "\\b(review|reviewer|inceleme) .{0,20}(yakalamadı|görmedi|kaçırdı)\\b"
+        ]
+      },
+      "examples": {
+        "correction": "Hayır, böyle değil: uv kullan",
+        "rule": "Bundan sonra her zaman testleri çalıştır",
+        "approval": "Mükemmel, aynen böyle",
+        "escaped_bug": "Reviewer bunu kaçırdı, canlıda bug var",
+        "neutral": "Rapor sayfasına CSV dışa aktarma ekle"
+      }
+    },
+    "pl": {
+      "name": "Polish",
+      "patterns": {
+        "correction": [
+          "^\\s*nie[,.!\\s]",
+          "\\bnie tak\\b",
+          "\\bto (jest )?źle\\b",
+          "\\bprzecież (mówiłem|mówiłam|prosiłem|prosiłam)"
+        ],
+        "rule": [
+          "\\b(zawsze|nigdy|od teraz|od tej pory|za każdym razem)\\b"
+        ],
+        "approval": [
+          "\\b(idealnie|świetnie|dokładnie tak|dobry styl)\\b"
+        ],
+        "escaped_bug": [
+          "\\bbug na produkcji\\b",
+          "\\b(przegapił|przeoczył)(eś|aś|a)?\\b",
+          "\\b(reviewer|recenzent|review) nie (zauważył|wyłapał)"
+        ]
+      },
+      "examples": {
+        "correction": "Nie, nie tak: użyj uv",
+        "rule": "Od teraz zawsze uruchamiaj testy",
+        "approval": "Świetnie, dokładnie tak",
+        "escaped_bug": "Reviewer przeoczył, bug na produkcji",
+        "neutral": "Dodaj eksport CSV do strony raportu"
+      }
+    },
+    "uk": {
+      "name": "Ukrainian",
+      "patterns": {
+        "correction": [
+          "^\\s*ні[,.!\\s]",
+          "\\bне так\\b",
+          "\\bне треба\\b",
+          "\\bнеправильно\\b",
+          "\\bя ж (казав|казала|просив|просила)"
+        ],
+        "rule": [
+          "\\b(завжди|ніколи|надалі|щоразу|відтепер)\\b"
+        ],
+        "approval": [
+          "\\b(чудово|ідеально|саме так|гарний стиль|так і роби)"
+        ],
+        "escaped_bug": [
+          "\\bпропусти(в|ла|ли) (баг|помилк)",
+          "\\bбаг (у|в) продакшн",
+          "\\bрев.?ю\\w* не (помітив|помітила|зловив|зловила)"
+        ]
+      },
+      "examples": {
+        "correction": "Ні, не так: використовуй uv",
+        "rule": "Надалі завжди запускай тести",
+        "approval": "Чудово, саме так",
+        "escaped_bug": "Рев'юер не помітив, баг у продакшн",
+        "neutral": "Додай експорт у CSV на сторінку звіту"
+      }
+    },
+    "nl": {
+      "name": "Dutch",
+      "patterns": {
+        "correction": [
+          "^\\s*nee\\b",
+          "\\bniet zo\\b",
+          "\\bdat klopt niet\\b",
+          "\\bik zei (toch|al)\\b",
+          "\\bdat is fout\\b"
+        ],
+        "rule": [
+          "\\b(altijd|nooit|vanaf nu|voortaan|elke keer)\\b"
+        ],
+        "approval": [
+          "\\b(precies|helemaal goed|goed gedaan|mooie stijl)\\b"
+        ],
+        "escaped_bug": [
+          "\\bbug in productie\\b",
+          "\\b(gemist|over het hoofd gezien)\\b"
+        ]
+      },
+      "examples": {
+        "correction": "Nee, niet zo: gebruik uv",
+        "rule": "Voortaan altijd de tests draaien",
+        "approval": "Precies, goed gedaan",
+        "escaped_bug": "De reviewer heeft het gemist, bug in productie",
+        "neutral": "Voeg een CSV-export toe aan de rapportpagina"
+      }
+    },
+    "vi": {
+      "name": "Vietnamese",
+      "patterns": {
+        "correction": [
+          "^\\s*không[,.!\\s]",
+          "\\bkhông phải (vậy|thế)\\b",
+          "\\bsai rồi\\b",
+          "\\btôi đã (nói|bảo)\\b"
+        ],
+        "rule": [
+          "\\b(luôn luôn|luôn|không bao giờ|từ giờ|từ nay|mỗi lần)\\b"
+        ],
+        "approval": [
+          "\\b(hoàn hảo|chính xác|đúng rồi|làm tốt lắm)\\b"
+        ],
+        "escaped_bug": [
+          "\\b(lỗi|bug) (trên|ở) (production|prod)\\b",
+          "\\bbỏ sót (lỗi|bug)\\b",
+          "\\b(review|reviewer) (không phát hiện|bỏ sót)\\b"
+        ]
+      },
+      "examples": {
+        "correction": "Không, không phải vậy: dùng uv",
+        "rule": "Từ giờ luôn chạy test trước",
+        "approval": "Hoàn hảo, chính xác",
+        "escaped_bug": "Reviewer bỏ sót, bug trên production",
+        "neutral": "Thêm chức năng xuất CSV vào trang báo cáo"
+      }
+    }
+  }
+}

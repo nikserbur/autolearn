@@ -1,0 +1,27 @@
+name: Bug report
+description: Something in a hook, script, agent or skill does not work as documented
+labels: [bug]
+body:
+  - type: input
+    id: component
+    attributes:
+      label: Component
+      placeholder: "hooks/verify_gate.py, /feature step 5, kb_route.py ..."
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened and what you expected
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: How to reproduce
+      description: For hooks, the JSON payload you piped in is ideal. Redact anything private.
+  - type: input
+    id: env
+    attributes:
+      label: Environment
+      placeholder: "Claude Code version, OS, Python version, plugin or install.sh"
