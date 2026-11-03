@@ -4,6 +4,7 @@ calling a skill. A write into the knowledge base (`$AUTOLEARN_HOME/knowledge`) o
 folder named `KB` (a research knowledge base) starts an incremental `kb_rag.py index` in the
 background, so the next search already sees the new chunks. Never blocks, prints nothing.
 
+AUTOLEARN_PYTHON names the interpreter that has the embedding model (default: this one).
 AUTOLEARN_AUTOINDEX=0 disables it; AUTOLEARN_AUTOINDEX=sync waits for the indexer (tests).
 """
 from __future__ import annotations
@@ -48,7 +49,7 @@ def main() -> int:
     engine = next((p for p in ENGINE_CANDIDATES if p.exists()), None)
     if engine is None:
         return 0
-    cmd = [sys.executable, str(engine), "index"] + (["--root", str(research)] if research else [])
+    cmd = [os.environ.get("AUTOLEARN_PYTHON") or sys.executable, str(engine), "index"] + (["--root", str(research)] if research else [])
     try:
         if mode == "sync":
             subprocess.run(cmd, capture_output=True, timeout=600)

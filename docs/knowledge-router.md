@@ -43,10 +43,15 @@ Where pages come from:
 3. **Vector store**: `knowledge/.rag/meta.json` (files, chunks, backend) and `vectors.f32`
    (float32 rows). Only changed files are re-embedded. Every research `KB/` folder ever indexed
    stays in the store, so knowledge accumulates across projects.
-4. **Ranking**: cosine similarity (0.65) plus BM25 (0.35) for exact names, ids and numbers,
-   times a boost for sections that a matching topic-map block points to.
+4. **Ranking**: reciprocal rank fusion of the embedding ranking and a BM25 ranking (exact names,
+   ids, numbers); chunks holding the query's identifiers (tokens with digits: E99, PAY-123) and
+   sections a matching topic-map block points to are boosted. On 11 real Russian / English
+   queries over a research KB: fastembed MiniLM top-1 8/11, top-3 10/11 (MRR 0.80); stdlib
+   hashing top-1 5/11, top-3 9/11 (MRR 0.65).
 5. **Automatic**: the `kb_autoindex` hook re-embeds in the background on every write to the KB
-   or a `KB/` folder; `search` also refreshes before ranking.
+   or a `KB/` folder; `search` also refreshes before ranking. Set `AUTOLEARN_PYTHON` to the
+   interpreter that has the model; a python without it never downgrades a model-built store, it
+   skips re-indexing and ranks by words only.
 
 ## Routing
 

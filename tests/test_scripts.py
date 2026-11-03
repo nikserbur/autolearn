@@ -97,6 +97,32 @@ class KbRag(ScriptCase):
         self.assertIn("KNOWLEDGE.md:3-4", out)
         self.assertIn("backend hash-512", self.run_script("research/scripts/kb_rag.py", "status"))
 
+    def test_identifier_in_query_wins(self):
+        (self.kb / "topics" / "runs.md").write_text(
+            "# Runs\n\n## Round 3\n- E99 queue model adds 0.02 per lot.\n\n"
+            "## Experiment protocol\n- Every experiment is registered before the run.\n")
+        out = self.run_script("research/scripts/kb_rag.py", "search", "--no-log", "--k", "1",
+                              "what", "did", "experiment", "E99", "give")
+        self.assertIn("topics/runs.md:3-5", out)
+
+    def test_model_store_is_never_downgraded(self):
+        self.run_script("research/scripts/kb_rag.py", "index")
+        meta_path = self.kb / ".rag" / "meta.json"
+        meta = json.loads(meta_path.read_text())
+        meta["backend"] = "fastembed:some/model"
+        meta_path.write_text(json.dumps(meta))
+        env_backup = os.environ.pop("AUTOLEARN_EMBED", None)
+        try:
+            env = dict(os.environ, AUTOLEARN_HOME=str(self.home))
+            proc = subprocess.run([sys.executable, str(SKILLS / "research/scripts/kb_rag.py"), "search",
+                                   "--no-log", "hotfix"], capture_output=True, text=True, env=env, timeout=60)
+        finally:
+            if env_backup is not None:
+                os.environ["AUTOLEARN_EMBED"] = env_backup
+        self.assertIn("words only", proc.stdout)
+        self.assertIn("release-process.md", proc.stdout)
+        self.assertEqual(json.loads(meta_path.read_text())["backend"], "fastembed:some/model")
+
     def test_miss_and_budget(self):
         out = self.run_script("research/scripts/kb_rag.py", "search", "kubernetes")
         self.assertIn("No chunk matches", out)

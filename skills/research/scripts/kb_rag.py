@@ -18,8 +18,9 @@ auto takes fastembed, then sentence-transformers, then `hash` (stdlib signed has
 and character trigrams). Model: $AUTOLEARN_EMBED_MODEL, default a multilingual MiniLM.
 Changing the backend or model rebuilds the store.
 
-Ranking is hybrid: cosine similarity of embeddings plus BM25 over words (exact names, ids,
-numbers), times a boost for sections that a matching topic-map block points to. Each search
+Ranking is hybrid: reciprocal rank fusion of the embedding ranking and a BM25 ranking over words
+(exact names, ids, numbers), times a boost for chunks holding the query's identifiers (tokens with digits: E99, PAY-123)
+and for sections that a matching topic-map block points to. Each search
 appends `date, query, top chunk, hit|partial|miss` to `<KB>/.router-log.tsv`.
 """
 from __future__ import annotations
@@ -41,16 +42,20 @@ EMBED_CHARS = 2000
 HASH_DIM = 512
 DEFAULT_MODEL = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
 K1, B = 1.2, 0.75
-W_VEC, W_LEX = 0.65, 0.35
+STEM = 5  # stem length: 5 measured best on mixed Russian / English notes (6 splits endings)
+RRF_K = 60  # reciprocal rank fusion of the vector and BM25 rankings
 STOP = set("a an and are as at be by for from has have how in is it its of on or that the this to "
            "was were what when where which who why will with we our you your not no do does".split())
 SKIP_DIRS = {".git", ".rag", "__pycache__"}
 
 
-def kb_dir() -> pathlib.Path:
+def al_home() -> pathlib.Path:
     env = os.environ.get("AUTOLEARN_HOME")
-    base = pathlib.Path(env).expanduser() if env else pathlib.Path.home() / ".claude" / "autolearn"
-    return base / "knowledge"
+    return pathlib.Path(env).expanduser() if env else pathlib.Path.home() / ".claude" / "autolearn"
+
+
+def kb_dir() -> pathlib.Path:
+    return al_home() / "knowledge"
 
 
 def slug(text: str) -> str:
@@ -63,8 +68,8 @@ def words(text: str) -> list:
 
 
 def tokens(text: str) -> list:
-    """Word tokens cut to 6 characters: a crude stemmer that works for any language."""
-    return [w[:6] for w in words(text)]
+    """Word tokens cut to STEM characters: a crude stemmer that works for any language."""
+    return [w[:STEM] for w in words(text)]
 
 
 # ---------------------------------------------------------------- embeddings
@@ -78,7 +83,7 @@ class HashEmbedder:
         for text in texts:
             feats = {}
             for w in words(text):
-                feats["w:" + w[:6]] = feats.get("w:" + w[:6], 0.0) + 1.0
+                feats["w:" + w[:STEM]] = feats.get("w:" + w[:STEM], 0.0) + 1.0
                 padded = f" {w} "
                 for i in range(len(padded) - 2):
                     g = "c:" + padded[i:i + 3]
@@ -95,7 +100,8 @@ class HashEmbedder:
 class FastEmbedder:
     def __init__(self, model: str):
         from fastembed import TextEmbedding  # optional dependency
-        self.m, self.id = TextEmbedding(model_name=model), f"fastembed:{model}"
+        cache = al_home() / "models"  # the default temp cache can be wiped and re-downloaded
+        self.m, self.id = TextEmbedding(model_name=model, cache_dir=str(cache)), f"fastembed:{model}"
         self.dim = len(self.embed(["probe"])[0])
 
     def embed(self, texts: list) -> list:
@@ -198,8 +204,8 @@ class Store:
         return self.vec[i * d:(i + 1) * d]
 
     def update(self, roots: list, emb) -> int:
-        if self.meta["backend"] != emb.id or self.meta["dim"] != emb.dim:
-            self.meta, self.vec = {"backend": emb.id, "dim": emb.dim, "files": {}}, array("f")
+        if (self.meta["backend"], self.meta["dim"], self.meta.get("stem")) != (emb.id, emb.dim, STEM):
+            self.meta, self.vec = {"backend": emb.id, "dim": emb.dim, "stem": STEM, "files": {}}, array("f")
         old_files, old_vec, d = self.meta["files"], self.vec, emb.dim
         live, changed = {}, 0
         root_keys = [str(r.resolve()) for r in roots]
@@ -271,12 +277,12 @@ def map_boosts(kb: pathlib.Path, q: set) -> dict:
     return out
 
 
-def search(store: Store, emb, kb: pathlib.Path, query: str, k: int) -> tuple:
+def search(store: Store, emb, kb: pathlib.Path, query: str, k: int, use_vec: bool = True) -> tuple:
     qs = set(tokens(query))
     docs = [(f, c) for f, v in store.meta["files"].items() for c in v["chunks"]]
     if not docs or not query.strip():
         return [], qs
-    cos = store.cosines(emb.embed([query])[0])
+    cos = store.cosines(emb.embed([query])[0]) if use_vec else None
     n = len(docs)
     avg = sum(len(c["tok"]) for _, c in docs) / n or 1
     df = {t: sum(1 for _, c in docs if t in c["tok"] or t in c["htok"]) for t in qs}
@@ -289,17 +295,23 @@ def search(store: Store, emb, kb: pathlib.Path, query: str, k: int) -> tuple:
         dl = len(c["tok"]) or 1
         lex.append((sum(math.log(1 + (n - df[t] + 0.5) / (df[t] + 0.5)) * v * (K1 + 1)
                         / (v + K1 * (1 - B + B * dl / avg)) for t, v in tf.items()), len(tf)))
-    top_lex = max(s for s, _ in lex) or 1.0
+    cs_all = [float(cos[c["row"]]) if use_vec else 0.0 for _, c in docs]
+    vec_rank = {i: r for r, i in enumerate(sorted(range(n), key=lambda i: -cs_all[i]), 1)} if use_vec else {}
+    lex_rank = {i: r for r, i in enumerate(sorted((i for i in range(n) if lex[i][1]), key=lambda i: -lex[i][0]), 1)}
     boosts = map_boosts(kb, qs)
+    ids = {t for t in qs if any(ch.isdigit() for ch in t)}  # E99, h7, pay-123: exact ids must win
     floor = 0.2 if store.meta["backend"].startswith("hash") else 0.3
     ranked = []
-    for (f, c), (ls, cov) in zip(docs, lex):
-        cs = float(cos[c["row"]])
-        if cov == 0 and cs < floor:
+    for i, (f, c) in enumerate(docs):
+        cs, cov = cs_all[i], lex[i][1]
+        if cov == 0 and (cs < floor or not use_vec):
             continue
         last = slug(c["head"].split(" > ")[-1]) if c["head"] else ""
         boost = max(boosts.get((f, last), 1.0), boosts.get((f, ""), 1.0))
-        ranked.append(((W_VEC * max(cs, 0) + W_LEX * ls / top_lex) * boost, f, c, cov, cs))
+        rrf = (1 / (RRF_K + vec_rank[i]) if i in vec_rank else 0) + (1 / (RRF_K + lex_rank[i]) if i in lex_rank else 0)
+        if ids:
+            boost *= 1 + sum(t in c["tok"] or t in c["htok"] for t in ids) / len(ids)
+        ranked.append((rrf * RRF_K * boost, f, c, cov, cs))
     ranked.sort(key=lambda r: -r[0])
     return ranked[:k], qs
 
@@ -337,15 +349,23 @@ def main() -> int:
         return 0
     emb = embedder()
     roots = [r for r in [a.kb, *a.root] if r.exists()]
-    changed = store.update(roots, emb)
+    built = store.meta["backend"]
+    # Never downgrade a model-built store because this interpreter lacks the model (e.g. the hook
+    # runs the system python while fastembed lives in a venv): skip updates, rank by BM25 only.
+    degraded = os.environ.get("AUTOLEARN_EMBED", "auto").lower() == "auto" and built         and not built.startswith("hash") and built != emb.id
+    if degraded:
+        print(f"! store was built with {built}, which this python cannot load; not re-indexing, "
+              "ranking by words only. Run with the python that has the model (AUTOLEARN_PYTHON "
+              "for the hook) or AUTOLEARN_EMBED=hash to rebuild.", file=sys.stderr)
+    changed = 0 if degraded else store.update(roots, emb)
     if a.cmd == "index":
         n = sum(len(v["chunks"]) for v in store.meta["files"].values())
         print(f"Indexed {len(store.meta['files'])} files, {n} chunks ({changed} files updated), "
-              f"backend {emb.id} -> {store.dir}")
+              f"backend {store.meta['backend']} -> {store.dir}")
         return 0
 
     query = " ".join(a.query)
-    hits, qs = search(store, emb, a.kb, query, a.k)
+    hits, qs = search(store, emb, a.kb, query, a.k, use_vec=not degraded)
     kb_abs = str(a.kb.resolve())
     rel = lambda p: pathlib.Path(p).relative_to(kb_abs).as_posix() if p.startswith(kb_abs) \
         else pathlib.Path(p).as_posix()
@@ -367,7 +387,8 @@ def main() -> int:
                 print(f"=== {loc}  {tag}\n{text.rstrip()}\n")
             else:
                 print(f"--- {loc}  {tag}  over budget -> read on demand or delegate to a subagent")
-        print(f"Loaded {used / 1000:.1f} KB of {a.budget / 1000:.1f} KB budget ({emb.id}). "
+        print(f"Loaded {used / 1000:.1f} KB of {a.budget / 1000:.1f} KB budget "
+              f"({'words only' if degraded else emb.id}). "
               "Cite chunks as path:line.")
     if not a.no_log:
         try:

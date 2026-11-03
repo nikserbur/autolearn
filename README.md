@@ -170,7 +170,7 @@ sources: https://wiki.example.com/refunds ✅ · docs/adr/0012-refunds.md ✅
 updated: 2026-10-21
 ```
 
-`kb_rag.py search refund webhook` ranks chunks by embedding similarity plus BM25 and returns the best ones in full with `path:line`, within an 8 KB budget. Embeddings come from a multilingual model when `fastembed` or `sentence-transformers` is installed (`pip install fastembed`), otherwise from a standard-library hashing fallback; vectors live in `.rag/vectors.f32`, and the `kb_autoindex` hook embeds every write to the KB or a research `KB/` folder in the background. `kb_route.py refund webhook` returns the matching curated block, the exact line ranges and sizes of the sections to read, and `sed -n` commands that fit an 8 KB budget; anything larger goes to a subagent. More in [docs/knowledge-router.md](docs/knowledge-router.md).
+`kb_rag.py search refund webhook` ranks chunks by fusing embedding similarity with BM25 (exact ids and names win) and returns the best ones in full with `path:line`, within an 8 KB budget. Embeddings come from a multilingual model when `fastembed` or `sentence-transformers` is installed (`pip install fastembed`), otherwise from a standard-library hashing fallback; vectors live in `.rag/vectors.f32`, and the `kb_autoindex` hook embeds every write to the KB or a research `KB/` folder in the background. `kb_route.py refund webhook` returns the matching curated block, the exact line ranges and sizes of the sections to read, and `sed -n` commands that fit an 8 KB budget; anything larger goes to a subagent. More in [docs/knowledge-router.md](docs/knowledge-router.md).
 
 ## What's inside
 

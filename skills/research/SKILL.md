@@ -42,7 +42,8 @@ and [EXPERIMENTS-TEMPLATE.tsv](EXPERIMENTS-TEMPLATE.tsv). Resuming an existing f
   ranks chunks by embedding similarity plus BM25 and returns the best ones with `path:line`
   within 8 KB. The store holds every research KB ever indexed, so past projects answer too.
 - Embeddings: a multilingual model when `fastembed` or `sentence-transformers` is installed
-  (`pip install fastembed`, model in `$AUTOLEARN_EMBED_MODEL`), otherwise the stdlib hashing
+  (`pip install fastembed`, model in `$AUTOLEARN_EMBED_MODEL`; if it lives in a venv, set
+  `AUTOLEARN_PYTHON` to that python so the hook uses it too), otherwise the stdlib hashing
   fallback. `kb_rag.py status` shows which one is in use; mention it once in the first check-in.
 - Retrieve (several short queries) at fixed points: before writing the program, before every
   round plan, before recording a decision ("did we see this before?"), and give the same
