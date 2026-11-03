@@ -233,8 +233,9 @@ Remember: back-of-queue sells are toxic, about -0.03 per lot.
 ## Knowledge base, retrieval (RAG) and router
 
 ```mermaid
-flowchart LR
+flowchart TB
   subgraph Write["Write: automatic"]
+    direction LR
     W[Claude writes .md / .tsv<br/>in knowledge/ or any KB/] --> HK[kb_autoindex hook]
     HK -- background --> IX[kb_rag.py index<br/>changed files only]
     IX --> CH[chunks: Markdown sections,<br/>journal rows]
@@ -242,6 +243,7 @@ flowchart LR
     EM --> VS[(knowledge/.rag/<br/>meta.json + vectors.f32)]
   end
   subgraph Read["Read: research, kb-router, reviewer"]
+    direction LR
     Q[query] --> VR[vector ranking]
     Q --> LR[BM25 ranking]
     VS --> VR
