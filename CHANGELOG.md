@@ -6,7 +6,7 @@ All notable changes to this project are documented here. The format follows
 and `.claude-plugin/marketplace.json` together with every release, or plugin users will not
 receive the update.
 
-## [Unreleased]
+## [0.2.0] - 2026-11-03
 
 ### Added
 - `/research` skill: a hypothesis-driven research loop (program, round tables, pre-registered
