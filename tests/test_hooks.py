@@ -371,6 +371,17 @@ class SessionBrief(HookCase):
         ctx = self.run_hook("session_brief.py", {"cwd": str(self.repo)})["hookSpecificOutput"]["additionalContext"]
         self.assertNotIn("No knowledge page", ctx)
 
+    def test_offers_embedding_model_when_store_uses_hashing(self):
+        rag = self.home / "knowledge" / ".rag"
+        rag.mkdir(parents=True)
+        (rag / "meta.json").write_text(json.dumps({"backend": "hash-512", "files": {}}))
+        ctx = self.run_hook("session_brief.py", {"cwd": str(self.repo)})["hookSpecificOutput"]["additionalContext"]
+        self.assertIn("pip install fastembed", ctx)
+        (self.home / ".brief-state.json").unlink()
+        (rag / "meta.json").write_text(json.dumps({"backend": "fastembed:m", "files": {}}))
+        out = self.run_hook("session_brief.py", {"cwd": str(self.repo)})
+        self.assertNotIn("fastembed", json.dumps(out))
+
     def test_silent_without_data_dir(self):
         self.home.rmdir()
         self.assertEqual(self.run_hook("session_brief.py", {}), "")

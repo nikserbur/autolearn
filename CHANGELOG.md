@@ -6,6 +6,12 @@ All notable changes to this project are documented here. The format follows
 and `.claude-plugin/marketplace.json` together with every release, or plugin users will not
 receive the update.
 
+## [0.2.1] - 2026-11-03
+
+### Added
+- The session brief offers to install an embedding model (`pip install fastembed`) on the first
+  run and weekly while RAG runs on the stdlib hashing fallback.
+
 ## [0.2.0] - 2026-11-03
 
 ### Added

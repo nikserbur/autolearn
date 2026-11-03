@@ -15,11 +15,13 @@ the plugin works without install.sh. Typical output (< 700 chars):
   Feedback inbox: 5 new signals - offer /learn at a natural break.
   Proposals waiting for the user's decision: 2 (proposals/).
 
-Suggestions (skill radar, a missing project page) appear at most once a week each.
+Suggestions (skill radar, a missing project page, a missing embedding model) appear at most
+once a week each.
 """
 from __future__ import annotations
 
 import datetime
+import importlib.util
 import json
 import os
 import pathlib
@@ -38,6 +40,24 @@ def section_items(text: str, heading: str) -> int:
         return 0
     body = re.sub(r"<!--.*?-->", "", m.group(1), flags=re.S)
     return len(re.findall(r"^\s*(\d+\.|-|\|(?!\s*-)(?!\s*Agent))\s+\S", body, re.M))
+
+
+def embeddings_missing(h: pathlib.Path) -> bool:
+    """True when RAG would run on the stdlib hashing fallback instead of a real model."""
+    try:
+        backend = json.loads((h / "knowledge" / ".rag" / "meta.json").read_text()).get("backend") or ""
+    except (OSError, ValueError):
+        backend = ""
+    if backend:
+        return backend.startswith("hash")
+    if os.environ.get("AUTOLEARN_PYTHON") or os.environ.get("AUTOLEARN_EMBED", "auto") == "hash":
+        return False
+    return not any(importlib.util.find_spec(m) for m in ("fastembed", "sentence_transformers"))
+
+
+EMBED_HINT = ("RAG has no embedding model (stdlib hashing: weaker, no cross-language search) - offer once "
+              "to install one: `pip install fastembed` (in a venv: also set AUTOLEARN_PYTHON to it); "
+              "the next kb_rag.py search rebuilds the store.")
 
 
 def read(path) -> str:
@@ -86,7 +106,8 @@ def main() -> int:
             "hookEventName": "SessionStart",
             "additionalContext": f"autolearn: created its data directory at {h} (knowledge base, "
                                  "lessons, style, proposals; under git). Mention once that the user can "
-                                 "add team checklists to knowledge/required-docs.md and run /kb-ingest repo.",
+                                 "add team checklists to knowledge/required-docs.md and run /kb-ingest repo."
+                                 + ("\n" + EMBED_HINT if embeddings_missing(h) else ""),
         }})
     if not h.exists():
         return 0
@@ -116,6 +137,10 @@ def main() -> int:
         lines.append(f"No knowledge page for {repo} yet - offer kb-ingest to build one from its "
                      "docs and register it in the topic map.")
         nudges.shown(page_key)
+
+    if nudges.due("embed") and embeddings_missing(h):
+        lines.append(EMBED_HINT)
+        nudges.shown("embed")
 
     inbox = read(h / "inbox" / "feedback.jsonl").splitlines()
     try:
