@@ -23,6 +23,10 @@ writes the spec with you, launches agents, keeps `PROGRESS.md`, and never writes
 2. **Spec** with you (`SPEC.md`), then an automatic scale estimate: files, risk, open questions,
    shared modules, test coverage -> no pipeline / light / deep.
 3. **code-scout** -> `CODEMAP.md` (≤ 10 KB).
+   **Research phase** (only when the goal is the best variant: fastest, most accurate, best
+   config, "which approach wins"): rounds of the `/research` loop in `$RUN/research/` with
+   `al-hypothesis-reviewer`; the winner goes into SPEC.md as "Chosen approach", or the run stops
+   and asks you when nothing beats the baseline.
 4. **planner** -> `PLAN.md`. Deep: strongest model, falls back to Opus on a usage limit. Large
    tasks: skeleton of stages first, details right before each stage.
 5. **plan-critic** -> PASS / REVISE. You approve the plan; no code before that.

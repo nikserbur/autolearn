@@ -6,6 +6,14 @@ All notable changes to this project are documented here. The format follows
 and `.claude-plugin/marketplace.json` together with every release, or plugin users will not
 receive the update.
 
+## [0.2.2] - 2026-11-03
+
+### Added
+- `/feature` research phase (step 1c): when the goal is the best variant, the run first
+  finds the winner with the research loop and the planner implements it.
+- README: diagrams of what starts by itself, the research loop and the RAG write / read
+  path, plus example requests.
+
 ## [0.2.1] - 2026-11-03
 
 ### Added

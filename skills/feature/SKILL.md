@@ -1,12 +1,12 @@
 ---
 name: feature
 description: >
-  Multi-agent delivery pipeline with model routing per role: spec -> plan -> critique -> red test and code under a verify gate -> fresh-context review -> merge gate -> lessons. Light mode by default (Opus plan, one critique round, Sonnet implementer, one Opus review); deep mode for risky work (strongest planner with experiments, several critique rounds, every finding cross-checked, mandatory lessons). Manual only: /feature PROJ-123, /feature "description", /feature deep PROJ-123.
+  Multi-agent delivery pipeline with model routing per role: spec -> (research phase when the feature is a search for the best variant) -> plan -> critique -> red test and code under a verify gate -> fresh-context review -> merge gate -> lessons. Light mode by default (Opus plan, one critique round, Sonnet implementer, one Opus review); deep mode for risky work (strongest planner with experiments, several critique rounds, every finding cross-checked, mandatory lessons). Manual only: /feature PROJ-123, /feature "description", /feature deep PROJ-123.
 argument-hint: "[deep|light] [ISSUE-KEY or task description]"
 disable-model-invocation: true
 ---
 
-# /feature - plan -> critique -> red test and code -> review -> merge gate -> lessons
+# /feature - (research) -> plan -> critique -> red test and code -> review -> merge gate -> lessons
 
 You are the controller: you coordinate agents, keep PROGRESS.md and talk to the user.
 **You do not write code, tests or docs yourself and you do not fix review findings.** Session
@@ -28,6 +28,7 @@ Data directory: `~/.claude/autolearn/` (below: HOME).
 | Extra reviewers (learned) | those whose trigger matches the diff | same |
 | Implementer gate | max_blocks 2 | max_blocks 3 |
 | Merge gate (Opus max) | mandatory; up to 2 rounds | mandatory; up to 3 rounds |
+| Research phase (1c, only for a search for the best) | 1-2 rounds, 1 review | up to 4 rounds, critique + review every round |
 | Lessons | only on signals (step 7) | always |
 
 A one-sentence task touching 1-2 files: say even light is overkill and offer to do it directly.
@@ -92,11 +93,39 @@ After SPEC.md and the estimate, before the plan. Agent -> `al-code-scout`: paths
 `$RUN/CODEMAP.md`, the repo root. It runs nothing and returns CODEMAP.md up to 10 KB: entry
 points, signatures, tests, verify commands. The planner starts from it.
 
+## 1c. Research phase - only when the feature is a search for the best
+
+Run it when the spec cannot say *how* before experiments decide it. Signals (any one):
+- the definition of done is a measured optimum: fastest, most accurate, cheapest, best config,
+  "net positive after costs", "beats the current one by X";
+- several candidate approaches and no evidence yet which one wins (algorithms, libraries,
+  models, parameters, data sources);
+- the user says research, compare, tune, benchmark, "find what works".
+A plain "add X that does Y" skips this step. Tell the user in one line that the run starts
+with research and why; write it in PROGRESS.md.
+
+How: run the loop of the [research skill](../research/SKILL.md) inside this run, with the
+research folder `$RUN/research/` (its `KB/` is embedded by the `kb_autoindex` hook) and these
+settings:
+1. `PROGRAM.md` from SPEC.md: the goal and metric come from "Definition of done", hard rules
+   from "Out of scope" and Risk; the deliverable is "the winning approach with evidence".
+2. Retrieve first (`kb_rag.py search` from the research skill): a past run may already hold
+   the answer. If the KB settles it, cite it and skip the rounds.
+3. Rounds as in the mode table, each with pre-registered hypotheses,
+   Agent -> `al-hypothesis-reviewer` (critique, then review) and non-blocking check-ins.
+   Experiments are throwaway scripts in `$RUN/research/scripts/`, never in the repo.
+4. Exit: the reviewer's verdict names a winner that passes the criterion on honest data ->
+   add "## Chosen approach" to SPEC.md (winner, numbers, `research/KB/reviews/R<NN>` link,
+   rejected alternatives in one line each) and continue with step 2; the planner implements
+   the winner and the review checks the code against it. Nothing beats the baseline -> stop
+   before planning, report the evidence and ask the user whether to change the goal.
+
 ## 2. Plan
 
 Before each planner launch reset the experiment counter: `rm -f HOME/runs/.planner-runs-*`.
 
-Agent -> `al-planner`. Brief: mode (and stage), paths to SPEC.md, CODEMAP.md, CONTEXT.md, PLAN.md,
+Agent -> `al-planner`. Brief: mode (and stage), paths to SPEC.md (with "Chosen approach" after a
+research phase), CODEMAP.md, CONTEXT.md, PLAN.md,
 LESSONS, [PLAN-TEMPLATE.md](PLAN-TEMPLATE.md), the issue key. Do not add your own implementation
 ideas.
 
@@ -216,7 +245,8 @@ CLAUDE.md only as text for an MR.
 remaining items). Fill "Outcome" in PROGRESS.md. If docs-scout returned "New for the topic map",
 append those rows to the right topic in `HOME/knowledge/topic-map.md` and commit there. Project
 git: team repo -> `/git-handoff`, otherwise a final commit. Report: mode, link to PROGRESS.md,
-tasks, verdicts, final gate, what is still open. Do not retell the plan.
+tasks, verdicts, final gate, what is still open. Do not retell the plan. After a research phase,
+also promote its durable conclusions into the global KB as step 9 of the research skill says.
 
 ## Economy rules
 

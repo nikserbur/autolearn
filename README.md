@@ -8,7 +8,7 @@ A self-learning harness for Claude Code that turns escaped bugs, merge-gate find
 
 [![CI](https://github.com/nikserbur/autolearn/actions/workflows/ci.yml/badge.svg)](https://github.com/nikserbur/autolearn/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-0.2.1-informational)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.2.2-informational)](CHANGELOG.md)
 [![Claude Code plugin](https://img.shields.io/badge/Claude%20Code-plugin-D97757)](#install)
 
 </div>
@@ -76,6 +76,35 @@ claude > Added the test, ~/.claude/agents/al-tz-reviewer.md and an "Extra review
 - **Context is a budget.** `CLAUDE.md` is a routing table, the session brief carries pointers, and heavy reading goes to subagents and scripts.
 - **The human approves behavior changes.** The harness proposes; you decide.
 
+## What starts by itself
+
+You do not have to remember which skill to call. Claude Code shows Claude every skill's description and Claude picks the one that matches your request; hooks are code and always fire on their event.
+
+```mermaid
+flowchart LR
+  U[Your message] --> M{Claude matches it<br/>against skill descriptions}
+  M -- "research, test hypotheses,<br/>find what works, keep iterating" --> RS[/research/]
+  M -- "how does X work here,<br/>did we try Y, what did we decide" --> KR[kb-router<br/>RAG search]
+  M -- "remember this,<br/>add to the knowledge base" --> KI[kb-ingest]
+  M -- "/feature ... (command only)" --> F[/feature/]
+  F -- "goal is the best variant" --> RS
+  subgraph Hooks["Hooks: always, no decision involved"]
+    H1[SessionStart: brief with pointers<br/>+ offer an embedding model if missing]
+    H2[UserPromptSubmit: capture corrections]
+    H3[PostToolUse Write/Edit: embed KB writes]
+    H4[PreToolUse Bash: secret guard]
+  end
+```
+
+| Component | Starts | How |
+|---|---|---|
+| `research` | by itself or `/autolearn:research` | description match |
+| `kb-router`, `kb-ingest`, `colleague-message`, `pr-description` | by themselves | description match |
+| `/feature` | only by command | `disable-model-invocation`: a many-agent run never starts by accident; it calls the research phase itself when the goal is "the best" |
+| Hooks | always | Claude Code events, not model judgement |
+
+Auto-invocation is the model's judgement: a request close to a description usually triggers it; the slash command always does.
+
 ## How it learns
 
 ```mermaid
@@ -121,8 +150,12 @@ Contradicted lessons move to an archive and repo lesson files stay under 60 line
 flowchart TD
   S[SPEC.md<br/>you + controller] --> DS[docs-scout<br/>CONTEXT.md]
   S --> CS[code-scout<br/>CODEMAP.md]
-  DS --> P[planner<br/>PLAN.md]
-  CS --> P
+  DS --> Q{goal is the best<br/>variant?}
+  CS --> Q
+  Q -- no --> P[planner<br/>PLAN.md]
+  Q -- yes --> RP[research phase<br/>rounds + hypothesis-reviewer]
+  RP -- "winner -> SPEC: Chosen approach" --> P
+  RP -- nothing beats baseline --> X[stop, ask you]
   P --> C{plan-critic}
   C -- REVISE --> P
   C -- PASS + your approval --> I[implementer<br/>red → green]
@@ -143,11 +176,80 @@ flowchart TD
 | Critique | 1 round | up to 3 (5 at high risk, two PASS in a row) |
 | Review | 1 round; refutation if more than 3 findings | up to 3 rounds; every finding refuted |
 | Merge gate | mandatory, up to 2 rounds | mandatory, up to 3 rounds |
+| Research phase (search for the best only) | 1-2 rounds | up to 4 rounds, critique + review each |
 | Lessons | on signals | always |
 
 Artifacts (`SPEC.md`, `PLAN.md`, `PROGRESS.md`, `review/`) live in `~/.claude/autolearn/runs/`, so your repo only gets code, tests and docs. Team repositories get `/git-handoff` instead of agent commits. More in [docs/pipeline.md](docs/pipeline.md).
 
+## The research loop
+
+```mermaid
+flowchart TD
+  G[Goal + your hard rules] --> PR[PROGRAM.md]
+  PR --> RT[(RAG: what do we know?)]
+  RT --> H[Round table: hypotheses<br/>effect · cost · pass criterion]
+  H --> CR{hypothesis-reviewer<br/>critique}
+  CR -- cut / change --> H
+  CR -- keep --> REG[EXPERIMENTS.tsv row<br/>before the run]
+  REG --> RUN[Run with the project's pipeline<br/>background, frozen script]
+  RUN --> REC[Result + decision<br/>KNOWLEDGE.md]
+  REC --> RV{hypothesis-reviewer<br/>review}
+  RV -- "leakage, recomputed numbers,<br/>causes, papers, forums, code" --> SY[Synthesis:<br/>what we know now]
+  SY --> RT
+  REC -. check-in, never blocks .-> YOU((you))
+  YOU -. steer any time .-> H
+  SY -- stop rule --> BR[BRIEF + durable facts<br/>to the global KB]
+```
+
+Everything lands in `research/<slug>/KB/`; the hook embeds it, so the next round, the reviewer and any future project retrieve it.
+
+## Examples: how to ask
+
+Any language works; the skills match on meaning.
+
+```text
+# research, explicit and guaranteed
+/autolearn:research "find an options market-making strategy that is net positive after fees on two-week windows" rounds 5
+/autolearn:research research/nifty-mm rounds 3        # continue an existing research folder
+
+# research, in plain words (usually triggers it)
+Audit what the previous model proposed, then test hypotheses on per-side markout prediction.
+Work in rounds: hypothesis -> test -> review -> conclusions in the KB -> new hypotheses.
+No positional short-vol strategies. Two-week windows only, our standard pipeline.
+
+# a feature whose goal is "the best": /feature runs the research phase first
+/feature "pick the fastest JSON parser for the ingest service and switch to it"
+
+# a plain feature: no research phase
+/feature "add CSV export to the reports page"
+
+# ask the knowledge base (kb-router, RAG)
+What did we learn about the CatBoost training window? Did we try E07c?
+
+# store a fact (kb-ingest; the hook embeds it right away)
+Remember: back-of-queue sells are toxic, about -0.03 per lot.
+```
+
 ## Knowledge base, retrieval (RAG) and router
+
+```mermaid
+flowchart LR
+  subgraph Write["Write: automatic"]
+    W[Claude writes .md / .tsv<br/>in knowledge/ or any KB/] --> HK[kb_autoindex hook]
+    HK -- background --> IX[kb_rag.py index<br/>changed files only]
+    IX --> CH[chunks: Markdown sections,<br/>journal rows]
+    CH --> EM[embeddings<br/>fastembed MiniLM or stdlib hashing]
+    EM --> VS[(knowledge/.rag/<br/>meta.json + vectors.f32)]
+  end
+  subgraph Read["Read: research, kb-router, reviewer"]
+    Q[query] --> VR[vector ranking]
+    Q --> LR[BM25 ranking]
+    VS --> VR
+    VR --> F[rank fusion<br/>+ exact-id boost + topic map]
+    LR --> F
+    F --> OUT[best chunks with path:line<br/>within 8 KB]
+  end
+```
 
 `kb-ingest` never writes a page without a router entry, and `kb_lint.py` fails on any page the router cannot reach. Every page, and every research `KB/` folder, is chunked, embedded and stored in the vector store `.rag/` for retrieval.
 
@@ -220,7 +322,7 @@ See [SECURITY.md](SECURITY.md) and [docs/hooks.md](docs/hooks.md).
 
 ## Status and limitations
 
-- **v0.2.1.** The hooks and scripts are covered by tests; the agent prompts come from daily use but have not been measured on a benchmark yet.
+- **v0.2.2.** The hooks and scripts are covered by tests; the agent prompts come from daily use but have not been measured on a benchmark yet.
 - **Claude Code only.** There are no adapters for Codex, Cursor or other hosts.
 - **Feedback capture is regex-based.** It recognises common phrasings in 15 languages and misses paraphrases; `/learn` also reads the corrections in the current conversation.
 - **The knowledge router is keyword-based**, not semantic search.
