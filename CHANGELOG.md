@@ -6,6 +6,24 @@ All notable changes to this project are documented here. The format follows
 and `.claude-plugin/marketplace.json` together with every release, or plugin users will not
 receive the update.
 
+## [Unreleased]
+
+### Added
+- `/research` skill: a hypothesis-driven research loop (program, round tables, pre-registered
+  `EXPERIMENTS.tsv`, `KNOWLEDGE.md`, reviews) with non-blocking check-ins the user can steer.
+- `al-hypothesis-reviewer` agent: critiques a round before compute and reviews finished
+  experiments (leakage, costs, recomputed numbers, causes, literature, forums, local code, KB).
+- `kb_rag.py` (inside the research skill): RAG with embeddings and a vector store
+  (`.rag/meta.json` + `vectors.f32`) over the knowledge base and every research `KB/` folder;
+  multilingual model via `fastembed` or `sentence-transformers` when installed, stdlib hashing
+  otherwise; hybrid cosine + BM25 ranking boosted by the topic map; incremental re-embedding.
+- `kb_autoindex` hook (PostToolUse Write / Edit): embeds every KB write in the background, so
+  knowledge accumulates without calling a skill.
+
+### Changed
+- `kb-router` retrieves chunks first and uses the topic map as the curated route; `kb-ingest`
+  writes chunk-friendly sections and re-indexes after every ingest.
+
 ## [0.1.0] - 2026-10-27
 
 ### Added

@@ -1,5 +1,5 @@
 {
-  "description": "autolearn: secret guard, feedback capture, routing brief, and the /feature pipeline gates (scoped to their agents by agent_type).",
+  "description": "autolearn: secret guard, feedback capture, routing brief, knowledge-base auto-indexing, and the /feature pipeline gates (scoped to their agents by agent_type).",
   "hooks": {
     "SessionStart": [
       {
@@ -53,6 +53,18 @@
             "type": "command",
             "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/verify_gate.py\"",
             "timeout": 900
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/kb_autoindex.py\"",
+            "timeout": 10
           }
         ]
       }

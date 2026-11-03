@@ -29,6 +29,7 @@ Then, in any repository:
 /feature "add CSV export"        # plan -> critique -> red test -> code -> review -> merge gate
 /merge-check                     # fresh-context "can this be merged?"
 /learn                           # turn captured feedback into lessons and proposals
+/research "find a config that trades net positive"  # hypothesis -> test -> review -> KB -> next round
 /skill-radar                     # what you have, what you keep doing by hand, what exists
 ```
 
@@ -53,14 +54,15 @@ claude > Added the test, ~/.claude/agents/al-tz-reviewer.md and an "Extra review
 - **Missed a bug? It grows a reviewer.** `/retro` finds the first pipeline stage that had the information to catch the defect and proposes the cheapest durable guard: a regression test, a hook, a rule, a prompt patch, or a new specialised reviewer agent that runs on matching diffs from then on.
 - **Learns from outcomes, not just from chat.** Merge-gate findings, refuted and confirmed review comments, verify-gate blocks and escaped bugs become lessons for the repo they happened in, each with evidence.
 - **Learns how you work.** A hook notices corrections ("no, use uv"), standing rules ("from now on..."), approvals and escaped-bug reports in 15 languages; `/learn` turns them into preferences, and your edits to drafted messages into a style file.
-- **Routes context instead of loading it.** The knowledge base is built together with a topic-map router that loads the right 8 KB, not the whole library.
+- **Retrieves context instead of loading it (RAG).** Pages, research journals and reviews are chunked and ranked (BM25 plus the curated topic map), and only the best 8 KB enter the context, each chunk with `path:line`.
+- **Researches in rounds, not in one shot.** `/research` pre-registers hypotheses, has a fresh reviewer attack the plan and then the results (leakage, costs, recomputed numbers, root causes, papers, forums, local code), writes every conclusion to a research KB and derives the next round from it. Check-ins with intermediate results never block: you steer while it works.
 - **Structures what it reads.** Docs, wiki pages, repos and tickets become topic and project pages on your machine, every fact with its source.
 - **Knows what it is missing.** `/skill-radar` mines your sessions for repeated manual work and scouts official skills, plugin marketplaces and the MCP registry for trusted building blocks, or drafts a new skill.
 - **You stay in charge.** Lessons are written automatically and shown to you after every run; anything that steers future runs beyond a lesson is a proposal that waits for your "yes".
 
 <div align="center">
 
-| 12 agents | 10 skills | 6 hooks | 5 helper scripts | 0 dependencies |
+| 13 agents | 11 skills | 7 hooks | 6 helper scripts | 0 dependencies |
 |:---:|:---:|:---:|:---:|:---:|
 | model-routed roles | slash commands + auto-triggered | tested, stdlib Python | deterministic work out of the context | Python 3.9+ standard library |
 
@@ -145,9 +147,9 @@ flowchart TD
 
 Artifacts (`SPEC.md`, `PLAN.md`, `PROGRESS.md`, `review/`) live in `~/.claude/autolearn/runs/`, so your repo only gets code, tests and docs. Team repositories get `/git-handoff` instead of agent commits. More in [docs/pipeline.md](docs/pipeline.md).
 
-## Knowledge base and context router
+## Knowledge base, retrieval (RAG) and router
 
-`kb-ingest` never writes a page without a router entry, and `kb_lint.py` fails on any page the router cannot reach.
+`kb-ingest` never writes a page without a router entry, and `kb_lint.py` fails on any page the router cannot reach. Every page, and every research `KB/` folder, is chunked, embedded and stored in the vector store `.rag/` for retrieval.
 
 ```text
 ~/.claude/autolearn/knowledge/
@@ -156,6 +158,7 @@ Artifacts (`SPEC.md`, `PLAN.md`, `PROGRESS.md`, `review/`) live in `~/.claude/au
 ├── topics/<slug>.md      # distilled notes, every fact with its source
 ├── projects/<repo>.md    # one page per repository: purpose, layout, commands, conventions, pitfalls
 ├── required-docs.md      # checklists every task is checked against
+├── .rag/                 # vector store: meta.json + vectors.f32, embedded on every write
 └── .router-log.tsv       # hits and misses, feeding /learn and kb-ingest
 ```
 
@@ -167,14 +170,14 @@ sources: https://wiki.example.com/refunds ✅ · docs/adr/0012-refunds.md ✅
 updated: 2026-10-21
 ```
 
-`kb_route.py refund webhook` returns the matching block, the exact line ranges and sizes of the sections to read, and `sed -n` commands that fit an 8 KB budget; anything larger goes to a subagent. More in [docs/knowledge-router.md](docs/knowledge-router.md).
+`kb_rag.py search refund webhook` ranks chunks by embedding similarity plus BM25 and returns the best ones in full with `path:line`, within an 8 KB budget. Embeddings come from a multilingual model when `fastembed` or `sentence-transformers` is installed (`pip install fastembed`), otherwise from a standard-library hashing fallback; vectors live in `.rag/vectors.f32`, and the `kb_autoindex` hook embeds every write to the KB or a research `KB/` folder in the background. `kb_route.py refund webhook` returns the matching curated block, the exact line ranges and sizes of the sections to read, and `sed -n` commands that fit an 8 KB budget; anything larger goes to a subagent. More in [docs/knowledge-router.md](docs/knowledge-router.md).
 
 ## What's inside
 
-- **Agents (12, all prefixed `al-`):** docs-scout, code-scout, planner, plan-critic, implementer, test-writer, code-reviewer, doc-writer, merge-gate, lessons-keeper, escape-analyst, skill-scout.
-- **Skills (10):** `/feature`, `/merge-check`, `/learn`, `/retro`, `/skill-radar`, `kb-router`, `kb-ingest`, `colleague-message`, `pr-description`, `git-handoff`.
-- **Hooks (6):** secret guard on commits, feedback capture, session brief, verify gate, test-output filter, planner guard.
-- **Scripts (5):** knowledge router and linter, lessons and proposals CLI, session miner, capability inventory.
+- **Agents (13, all prefixed `al-`):** docs-scout, code-scout, planner, plan-critic, implementer, test-writer, code-reviewer, doc-writer, merge-gate, lessons-keeper, escape-analyst, skill-scout, hypothesis-reviewer.
+- **Skills (11):** `/feature`, `/research`, `/merge-check`, `/learn`, `/retro`, `/skill-radar`, `kb-router`, `kb-ingest`, `colleague-message`, `pr-description`, `git-handoff`.
+- **Hooks (7):** secret guard on commits, feedback capture, session brief, knowledge-base auto-indexing, verify gate, test-output filter, planner guard.
+- **Scripts (6):** knowledge retrieval (RAG), router and linter, lessons and proposals CLI, session miner, capability inventory.
 
 Every component with its model, trigger and purpose: [docs/components.md](docs/components.md).
 

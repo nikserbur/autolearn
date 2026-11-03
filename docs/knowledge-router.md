@@ -31,6 +31,23 @@ Where pages come from:
 - any "remember this" in conversation,
 - repeated router misses surfaced by `/learn`.
 
+## Retrieval (RAG): embeddings and the vector store
+
+`kb_rag.py` (in `skills/research/scripts/`) is the default way to read the knowledge base:
+
+1. **Chunks**: Markdown at its headings (long sections at paragraphs), `.tsv` journals one row
+   per chunk with the header attached.
+2. **Embeddings**: a multilingual sentence model through `fastembed` or `sentence-transformers`
+   when installed (`$AUTOLEARN_EMBED`, `$AUTOLEARN_EMBED_MODEL`), otherwise stdlib signed hashing
+   of stems and character trigrams. Changing the backend rebuilds the store.
+3. **Vector store**: `knowledge/.rag/meta.json` (files, chunks, backend) and `vectors.f32`
+   (float32 rows). Only changed files are re-embedded. Every research `KB/` folder ever indexed
+   stays in the store, so knowledge accumulates across projects.
+4. **Ranking**: cosine similarity (0.65) plus BM25 (0.35) for exact names, ids and numbers,
+   times a boost for sections that a matching topic-map block points to.
+5. **Automatic**: the `kb_autoindex` hook re-embeds in the background on every write to the KB
+   or a `KB/` folder; `search` also refreshes before ranking.
+
 ## Routing
 
 `kb_route.py <keywords>`:

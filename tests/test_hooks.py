@@ -400,5 +400,36 @@ class SessionBrief(HookCase):
         self.assertEqual(self.run_hook("session_brief.py", {"cwd": str(self.repo)}), "")
 
 
+class KbAutoindex(HookCase):
+    def write_payload(self, path):
+        return {"tool_name": "Write", "tool_input": {"file_path": str(path)}}
+
+    def run_sync(self, path):
+        os.environ["AUTOLEARN_AUTOINDEX"] = "sync"
+        os.environ["AUTOLEARN_EMBED"] = "hash"
+        try:
+            return self.run_hook("kb_autoindex.py", self.write_payload(path))
+        finally:
+            del os.environ["AUTOLEARN_AUTOINDEX"], os.environ["AUTOLEARN_EMBED"]
+
+    def test_write_into_research_kb_is_embedded(self):
+        kb = self.repo / "research" / "demo" / "KB"
+        kb.mkdir(parents=True)
+        page = kb / "KNOWLEDGE.md"
+        page.write_text("# Knowledge\n\n## E01\n- Queue imbalance adds 0.01 corr.\n")
+        self.assertEqual(self.run_sync(page), "")
+        meta = json.loads((self.home / "knowledge" / ".rag" / "meta.json").read_text())
+        self.assertIn(str(page.resolve()), meta["files"])
+
+    def test_other_files_are_ignored(self):
+        src = self.repo / "main.py"
+        src.write_text("print(1)\n")
+        self.run_sync(src)
+        notes = self.repo / "notes.md"
+        notes.write_text("# Notes\n")
+        self.run_sync(notes)
+        self.assertFalse((self.home / "knowledge" / ".rag").exists())
+
+
 if __name__ == "__main__":
     unittest.main()

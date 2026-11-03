@@ -9,7 +9,7 @@
     {
       "name": "autolearn",
       "source": "./",
-      "description": "Self-learning harness for Claude Code: multi-agent delivery pipeline with a fresh-context merge gate, evidence-backed lessons, auto-grown reviewers, a routed local knowledge base and a skill/MCP gap radar.",
+      "description": "Self-learning harness for Claude Code: multi-agent delivery pipeline with a fresh-context merge gate, evidence-backed lessons, auto-grown reviewers, a hypothesis-driven research loop with an independent reviewer, a local knowledge base with retrieval (RAG) and a skill/MCP gap radar.",
       "category": "development",
       "license": "MIT",
       "tags": [

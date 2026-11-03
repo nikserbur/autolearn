@@ -1,11 +1,11 @@
 ---
 name: kb-ingest
 description: >
-  Builds the local knowledge base and its router at the same time. Use when the user says "remember this", "add to the knowledge base", "build a page for this repo", after reading docs, wiki pages, code or tickets that will matter again, when kb-router reported a miss, or when docs-scout returned "New for the topic map". Distills sources into topic and project pages with a source on every fact, registers them in the topic map with keywords and section pointers, keeps every file inside its size budget, and commits.
+  Builds the local knowledge base for retrieval (RAG) together with its curated router. Use when the user says "remember this", "add to the knowledge base", "build a page for this repo", after reading docs, wiki pages, code or tickets that will matter again, after a research round whose conclusions matter beyond its project, when kb-router reported a miss, or when docs-scout returned "New for the topic map". Distills sources into chunk-friendly topic and project pages with a source on every fact, registers them in the topic map with keywords and section pointers, embeds the new chunks into the vector store, keeps every file inside its size budget, and commits.
 argument-hint: "[repo | <url or path> | <topic>]"
 ---
 
-# kb-ingest - every page it writes is routable from day one
+# kb-ingest - every page it writes is retrievable from day one
 
 Target: `~/.claude/autolearn/knowledge/` (below: KB). Layout and the topic-block format are
 described in the kb-router skill. The rule of this skill: **no page without a router entry, no
@@ -15,6 +15,8 @@ Argument: `$ARGUMENTS`
 - `repo` (or empty inside a git repo without a project page) -> build `KB/projects/<repo>.md`.
 - a URL or path -> distill that source into the matching topic.
 - a topic name -> collect what this conversation established about it.
+- a research folder -> promote the durable conclusions of its `KB/KNOWLEDGE.md` (not the
+  journal) into topic pages, each fact pointing back to the experiment or review.
 
 ## 1. Read (cheaply)
 - Small source (< ~30 KB): read it directly.
@@ -28,6 +30,8 @@ Topic page `KB/topics/<slug>.md`, sections in this order (skip empty ones):
 `## Summary` (3-5 lines) · `## Facts` · `## How to` · `## Pitfalls` · `## Contradictions` ·
 `## Open questions` · `## Sources`.
 - Every fact is one line ending with its source: `(src: <url or path:line> ✅)`.
+- Write for retrieval: one subject per `##`/`###` section, a specific heading with the words a
+  question would use, sections short enough to stand alone as a chunk (~1.5 KB).
 - Do not copy long passages; restate in your own words, quote at most a short phrase.
 - Contradicting sources: keep both, say which one wins and why (code > ADR > docs > wiki > chat).
 - Never store secrets, credentials or personal data. Sensitive pages: store a pointer and the
@@ -56,8 +60,10 @@ A project page is also registered as a topic block (`## Project: <repo>`).
 | topic page | <= 40 KB | split into subtopic pages, each with its own block |
 | project page | <= 15 KB | move details into topic pages, keep pointers |
 
-## 5. Lint, commit, report
-Run `python3 "${CLAUDE_SKILL_DIR}/scripts/kb_lint.py"`. Fix every ERROR
+## 5. Lint, index, commit, report
+Run `python3 "${CLAUDE_SKILL_DIR}/scripts/kb_lint.py"`. The `kb_autoindex` hook has already
+embedded the new chunks; without hooks run
+`python3 "${CLAUDE_SKILL_DIR}/../research/scripts/kb_rag.py" index`. Fix every ERROR
 (broken pointer, unroutable page, block without keywords) before committing; act on WARN
 budgets as the table above says.
 If KB is a git repository: `git -C KB add -A && git -C KB commit -m "kb: <topic> (+N facts)"`.

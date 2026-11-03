@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # autolearn installer: copies agents, skills and hooks into ~/.claude, seeds the data directory
-# ~/.claude/autolearn (never overwritten), and registers three global hooks in settings.json.
+# ~/.claude/autolearn (never overwritten), and registers four global hooks in settings.json.
 #
 #   ./install.sh                   install or upgrade; stops before changing anything if one of
 #                                  your own files has the same name as an autolearn file
@@ -105,12 +105,12 @@ record "file	hooks/autolearn"
 if [ "$DRY" = 1 ]; then say "  [dry-run] seed $AL from templates (existing files are kept)"
 else python3 "$SRC/hooks/_seed.py" "$AL" "$SRC/templates"; fi
 
-# 5. settings.json: three global hooks (+ optional push deny), idempotent, with a backup
+# 5. settings.json: four global hooks (+ optional push deny), idempotent, with a backup
 if [ "$SETTINGS" = 1 ]; then
   SETTINGS_FILE="$CLAUDE_DIR/settings.json"
   if exists "$SETTINGS_FILE"; then backup "$SETTINGS_FILE" >/dev/null || exit 1; fi
   if [ "$DRY" = 1 ]; then
-    say "  [dry-run] register SessionStart, UserPromptSubmit and PreToolUse(Bash) hooks in $SETTINGS_FILE"
+    say "  [dry-run] register SessionStart, UserPromptSubmit, PreToolUse(Bash) and PostToolUse(Write|Edit) hooks in $SETTINGS_FILE"
   else
     CUSTOM_HOME=""; [ "$CLAUDE_DIR" != "$HOME/.claude" ] && CUSTOM_HOME="$AL"
     python3 - "$SETTINGS_FILE" "$HOOKS_DST" "$DENY_PUSH" "$CUSTOM_HOME" <<'PY'
@@ -128,6 +128,7 @@ wanted = [
     ("SessionStart", "startup|resume|clear|compact", cmd("session_brief.py"), 10),
     ("UserPromptSubmit", None, cmd("capture_feedback.py"), 5),
     ("PreToolUse", "Bash", cmd("check_secrets.py"), 20),
+    ("PostToolUse", "Write|Edit|MultiEdit", cmd("kb_autoindex.py"), 10),
 ]
 h = cfg.setdefault("hooks", {})
 for event, matcher, command, timeout in wanted:

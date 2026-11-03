@@ -28,7 +28,7 @@ class ScriptCase(unittest.TestCase):
         self.tmp.cleanup()
 
     def run_script(self, rel, *args, expect=0):
-        env = dict(os.environ, AUTOLEARN_HOME=str(self.home))
+        env = dict(os.environ, AUTOLEARN_HOME=str(self.home), AUTOLEARN_EMBED="hash")
         proc = subprocess.run([sys.executable, str(SKILLS / rel), *args], capture_output=True,
                               text=True, env=env, timeout=60, cwd=self.tmp.name)
         self.assertEqual(proc.returncode, expect, proc.stdout + proc.stderr)
@@ -53,6 +53,56 @@ class KbRoute(ScriptCase):
         out = self.run_script("kb-router/scripts/kb_route.py", "--budget", "50", "--no-log", "release")
         self.assertIn("over budget -> delegate", out)
         self.assertFalse((self.kb / ".router-log.tsv").exists())
+
+
+class KbRag(ScriptCase):
+    def test_search_returns_chunks_with_lines_and_logs_hit(self):
+        out = self.run_script("research/scripts/kb_rag.py", "search", "hotfix", "tag")
+        self.assertIn("=== topics/release-process.md:", out)
+        self.assertIn("Hotfixes branch from the last tag", out)
+        self.assertTrue((self.kb / ".rag" / "meta.json").exists())
+        self.assertTrue((self.kb / ".rag" / "vectors.f32").exists())
+        self.assertIn("\thit\n", (self.kb / ".router-log.tsv").read_text())
+
+    def test_extra_root_indexes_journal_rows(self):
+        res = pathlib.Path(self.tmp.name) / "research" / "KB"
+        res.mkdir(parents=True)
+        (res / "EXPERIMENTS.tsv").write_text(
+            "id\thypothesis\tdecision\nE01\tqueue imbalance features\tKEEP\n"
+            "E02\tlonger training window\tDISCARD\n")
+        out = self.run_script("research/scripts/kb_rag.py", "search", "--root", str(res), "training", "window")
+        self.assertIn("EXPERIMENTS.tsv:3-3", out)
+        self.assertIn("DISCARD", out)
+        self.assertNotIn("queue imbalance", out)
+
+    def test_index_refreshes_changed_files(self):
+        self.run_script("research/scripts/kb_rag.py", "index")
+        (self.kb / "topics" / "new.md").write_text("# Flaky tests\n\n## Facts\n- Retry quarantine lives in ci/flaky.yml\n")
+        out = self.run_script("research/scripts/kb_rag.py", "search", "--no-log", "quarantine")
+        self.assertIn("topics/new.md:3-4", out)
+
+    def test_vectors_find_paraphrase_without_shared_words(self):
+        (self.kb / "topics" / "deploys.md").write_text(
+            "# Deploys\n\n## Rollback\n- Rollbacks redeploy the previous container image.\n")
+        out = self.run_script("research/scripts/kb_rag.py", "search", "--no-log", "rolling", "redeployment")
+        self.assertIn("topics/deploys.md:3-4", out)
+        self.assertIn("cos", out)
+
+    def test_status_reports_backend_and_store_survives_other_roots(self):
+        res = pathlib.Path(self.tmp.name) / "old-project" / "KB"
+        res.mkdir(parents=True)
+        (res / "KNOWLEDGE.md").write_text("# Knowledge\n\n## Fill model\n- Back of queue fills are toxic.\n")
+        self.run_script("research/scripts/kb_rag.py", "index", "--root", str(res))
+        out = self.run_script("research/scripts/kb_rag.py", "search", "--no-log", "toxic", "fills")
+        self.assertIn("KNOWLEDGE.md:3-4", out)
+        self.assertIn("backend hash-512", self.run_script("research/scripts/kb_rag.py", "status"))
+
+    def test_miss_and_budget(self):
+        out = self.run_script("research/scripts/kb_rag.py", "search", "kubernetes")
+        self.assertIn("No chunk matches", out)
+        self.assertIn("\tmiss\n", (self.kb / ".router-log.tsv").read_text())
+        out = self.run_script("research/scripts/kb_rag.py", "search", "--no-log", "--budget", "50", "release")
+        self.assertIn("over budget", out)
 
 
 class KbLint(ScriptCase):

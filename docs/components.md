@@ -18,6 +18,7 @@ Design notes: [pipeline](pipeline.md), [learning loop](learning-loop.md), [knowl
 | `al-merge-gate` | Opus, max effort | "Can this be merged?" with *no* plan or session context, like a tech lead seeing it cold |
 | `al-lessons-keeper` | Opus | Turns run artifacts and captured feedback into evidence-backed lessons; drafts proposals; keeps stats |
 | `al-escape-analyst` | Opus | Root-causes an escaped bug to a pipeline stage and drafts the guard, up to a full new reviewer agent |
+| `al-hypothesis-reviewer` | Opus | Fresh-context reviewer of a research loop: critiques a round before compute, then checks leakage and costs, recomputes headline numbers, decomposes causes, searches papers, forums, local code and the KB, ranks next tests |
 | `al-skill-scout` | Sonnet | Scouts skills, plugins and MCP servers for a gap; reads and trust-grades every candidate; installs nothing |
 
 ## Skills
@@ -25,12 +26,13 @@ Design notes: [pipeline](pipeline.md), [learning loop](learning-loop.md), [knowl
 | Skill | Trigger | What it does |
 |---|---|---|
 | `/feature` | manual | The multi-agent delivery pipeline (light / deep / two-stage) |
+| `/research` | "research", "test hypotheses", "keep iterating" | Rounds of pre-registered hypotheses -> critique -> runs -> independent review -> conclusions in a research KB -> next round; non-blocking check-ins |
 | `/merge-check` | "can we merge?" | Fresh-context pre-review; findings feed `/learn` |
 | `/learn` | manual or prompted | Inbox → lessons → proposals → you approve → applied |
 | `/retro` | "a bug slipped through" | Escaped-defect analysis → regression test, hook, rule, or a new reviewer |
 | `/skill-radar` | manual, monthly | Inventory + session mining + ecosystem scouting → install / build / skip |
-| `kb-router` | auto, on domain questions | Greps the topic map, loads ≤ 8 KB of the right sections, logs hits and misses |
-| `kb-ingest` | "remember this", router miss | Distills sources into pages **and** registers them in the router, lints, commits |
+| `kb-router` | auto, on domain questions | Retrieves (RAG) the best chunks of the KB and research folders, ≤ 8 KB with `path:line`; topic map as the curated route; logs hits and misses |
+| `kb-ingest` | "remember this", router miss | Distills sources into chunk-friendly pages **and** registers them in the router, lints, re-indexes, commits |
 | `colleague-message` | "draft a message to..." | Drafts in your voice; learns from your edits and approvals; never sends |
 | `pr-description` | "describe the PR" | What / why / verification / known limitations; closing keyword only in the last PR |
 | `git-handoff` | team repos | Read-only git; prints the exact commands for you to run |
@@ -41,6 +43,7 @@ Design notes: [pipeline](pipeline.md), [learning loop](learning-loop.md), [knowl
 |---|---|---|
 | `check_secrets.py` | PreToolUse (Bash) | Denies `git commit` when staged lines look like keys or tokens |
 | `capture_feedback.py` | UserPromptSubmit | Regex-tags corrections, rules, approvals and escaped bugs in 15 languages into the inbox; silent, local, secrets redacted |
+| `kb_autoindex.py` | PostToolUse (Write / Edit) | A write to the knowledge base or any `KB/` folder starts a background re-embedding of the changed files; never blocks |
 | `session_brief.py` | SessionStart | Injects pointers and counts (< 700 chars), never content: rules, repo lessons, inbox, proposals, radar age |
 | `verify_gate.py` | Stop / SubagentStop | Blocks `al-implementer` / `al-test-writer` from finishing until the task's verify command passes; releases them as FAILED after the budget; ignores stale task files |
 | `test_output_filter.py` | PreToolUse (Bash) | Sends subagents' test commands back with the exact filtered form to run, so they see failures and the summary, not 5,000 dots |
@@ -50,6 +53,7 @@ Design notes: [pipeline](pipeline.md), [learning loop](learning-loop.md), [knowl
 
 | Script | Used by | Does |
 |---|---|---|
+| `skills/research/scripts/kb_rag.py` | research, kb-router, kb-ingest, kb_autoindex hook | Chunks Markdown by heading and TSV by row, embeds them (fastembed / sentence-transformers multilingual model, or stdlib hashing), stores vectors in `.rag/`, hybrid cosine + BM25 ranking boosted by the topic map, incremental re-embedding, budgeted output with `path:line`, logs hit/miss |
 | `skills/kb-router/scripts/kb_route.py` | kb-router | Ranks topic blocks, resolves `file#section` to line ranges with sizes, prints budgeted `sed` commands, logs hit/miss |
 | `skills/kb-ingest/scripts/kb_lint.py` | kb-ingest | Broken pointers, unroutable pages, size budgets |
 | `skills/learn/scripts/lessons.py` | learn, feature, merge-check | Inbox, cursor, proposals, extra-reviewer matching against a patch, run stats with tuning hints |
