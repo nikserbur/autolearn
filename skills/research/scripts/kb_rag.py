@@ -336,7 +336,7 @@ def main() -> int:
     ap.add_argument("--k", type=int, default=8)
     ap.add_argument("--budget", type=int, default=BUDGET)
     ap.add_argument("--no-log", action="store_true")
-    a = ap.parse_args()
+    a = ap.parse_intermixed_args()  # options may follow the query words (Python < 3.12 needs this)
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(errors="replace")  # consoles without UTF-8 still get the text
 

@@ -6,6 +6,12 @@ All notable changes to this project are documented here. The format follows
 and `.claude-plugin/marketplace.json` together with every release, or plugin users will not
 receive the update.
 
+## [0.2.3] - 2026-11-03
+
+### Fixed
+- `kb_rag.py` on Python 3.9-3.11: options after the query words (`search --root DIR words`)
+  failed to parse; CI was red on 3.9 since 0.2.0.
+
 ## [0.2.2] - 2026-11-03
 
 ### Added

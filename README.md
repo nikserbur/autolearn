@@ -8,7 +8,7 @@ A self-learning harness for Claude Code that turns escaped bugs, merge-gate find
 
 [![CI](https://github.com/nikserbur/autolearn/actions/workflows/ci.yml/badge.svg)](https://github.com/nikserbur/autolearn/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-0.2.2-informational)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.2.3-informational)](CHANGELOG.md)
 [![Claude Code plugin](https://img.shields.io/badge/Claude%20Code-plugin-D97757)](#install)
 
 </div>
@@ -322,7 +322,7 @@ See [SECURITY.md](SECURITY.md) and [docs/hooks.md](docs/hooks.md).
 
 ## Status and limitations
 
-- **v0.2.2.** The hooks and scripts are covered by tests; the agent prompts come from daily use but have not been measured on a benchmark yet.
+- **v0.2.3.** The hooks and scripts are covered by tests; the agent prompts come from daily use but have not been measured on a benchmark yet.
 - **Claude Code only.** There are no adapters for Codex, Cursor or other hosts.
 - **Feedback capture is regex-based.** It recognises common phrasings in 15 languages and misses paraphrases; `/learn` also reads the corrections in the current conversation.
 - **The knowledge router is keyword-based**, not semantic search.
