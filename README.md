@@ -8,7 +8,7 @@ A self-learning harness for Claude Code that turns escaped bugs, merge-gate find
 
 [![CI](https://github.com/nikserbur/autolearn/actions/workflows/ci.yml/badge.svg)](https://github.com/nikserbur/autolearn/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-0.2.3-informational)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.3.0-informational)](CHANGELOG.md)
 [![Claude Code plugin](https://img.shields.io/badge/Claude%20Code-plugin-D97757)](#install)
 
 </div>
@@ -54,7 +54,7 @@ claude > Added the test, ~/.claude/agents/al-tz-reviewer.md and an "Extra review
 - **Missed a bug? It grows a reviewer.** `/retro` finds the first pipeline stage that had the information to catch the defect and proposes the cheapest durable guard: a regression test, a hook, a rule, a prompt patch, or a new specialised reviewer agent that runs on matching diffs from then on.
 - **Learns from outcomes, not just from chat.** Merge-gate findings, refuted and confirmed review comments, verify-gate blocks and escaped bugs become lessons for the repo they happened in, each with evidence.
 - **Learns how you work.** A hook notices corrections ("no, use uv"), standing rules ("from now on..."), approvals and escaped-bug reports in 15 languages; `/learn` turns them into preferences, and your edits to drafted messages into a style file.
-- **Retrieves context instead of loading it (RAG).** Pages, research journals and reviews are chunked and ranked (BM25 plus the curated topic map), and only the best 8 KB enter the context, each chunk with `path:line`.
+- **A knowledge base that decides for itself how to search (RAG).** Pages, research journals and reviews are indexed twice, as vectors and as an entity graph, and stay current chunk by chunk. Each question picks its own route, every result is graded before Claude relies on it, and what the base cannot answer is said out loud instead of guessed. Only the best 8 KB enter the context, each section with `path:line`.
 - **Researches in rounds, not in one shot.** `/research` pre-registers hypotheses, has a fresh reviewer attack the plan and then the results (leakage, costs, recomputed numbers, root causes, papers, forums, local code), writes every conclusion to a research KB and derives the next round from it. Check-ins with intermediate results never block: you steer while it works.
 - **Structures what it reads.** Docs, wiki pages, repos and tickets become topic and project pages on your machine, every fact with its source.
 - **Knows what it is missing.** `/skill-radar` mines your sessions for repeated manual work and scouts official skills, plugin marketplaces and the MCP registry for trusted building blocks, or drafts a new skill.
@@ -223,8 +223,10 @@ No positional short-vol strategies. Two-week windows only, our standard pipeline
 # a plain feature: no research phase
 /feature "add CSV export to the reports page"
 
-# ask the knowledge base (kb-router, RAG)
+# ask the knowledge base (kb-router, RAG): the route is chosen for each question
 What did we learn about the CatBoost training window? Did we try E07c?
+What breaks if Redis goes down?                                  # walks the entity graph
+What integration problems did all teams have in the third quarter?   # every document, what recurs
 
 # store a fact (kb-ingest; the hook embeds it right away)
 Remember: back-of-queue sells are toxic, about -0.03 per lot.
@@ -234,26 +236,65 @@ Remember: back-of-queue sells are toxic, about -0.03 per lot.
 
 ```mermaid
 flowchart TB
-  subgraph Write["Write: automatic"]
+  subgraph Write["Write: automatic, only what changed"]
     direction LR
-    W[Claude writes .md / .tsv<br/>in knowledge/ or any KB/] --> HK[kb_autoindex hook]
-    HK -- background --> IX[kb_rag.py index<br/>changed files only]
-    IX --> CH[chunks: Markdown sections,<br/>journal rows]
-    CH --> EM[embeddings<br/>fastembed MiniLM or stdlib hashing]
-    EM --> VS[(knowledge/.rag/<br/>meta.json + vectors.f32)]
+    W[Claude writes .md / .tsv<br/>also: search, watch, events] --> CDC[content hashes:<br/>changed chunks only]
+    CDC --> PC[sections as parents,<br/>small chunks as children]
+    PC --> CX[context for each chunk:<br/>title, summary, headings<br/>or a small LLM]
+    CX --> EM[embeddings<br/>late chunking if the model allows]
+    CX --> GR[entities and relations]
+    EM --> VS[(knowledge/.rag/)]
+    GR --> VS
   end
-  subgraph Read["Read: research, kb-router, reviewer"]
+  subgraph Read["Read: one command, routed per question"]
     direction LR
-    Q[query] --> VR[vector ranking]
-    Q --> LR[BM25 ranking]
-    VS --> VR
-    VR --> F[rank fusion<br/>+ exact-id boost + topic map]
-    LR --> F
-    F --> OUT[best chunks with path:line<br/>within 8 KB]
+    Q[question] --> RT{route}
+    RT -- "E99, PAY-123 or<br/>a specific question" --> H[vectors + BM25 + graph<br/>fused with RRF]
+    RT -- "what breaks if X is off" --> GW[graph walk] --> H
+    RT -- "problems of all teams" --> GL[every document,<br/>what recurs, clusters]
+    H --> RR[rerank: cross-encoder<br/>or built-in]
+    RR --> CR{CRAG grade}
+    GL --> CR
+    CR -- CORRECT --> OUT[sections with path:line<br/>within 8 KB]
+    CR -- AMBIGUOUS --> FIX[split the question, repair terms,<br/>name what is missing] --> OUT
+    CR -- INCORRECT --> WEB[say so: repo docs, tools, web,<br/>then write it into the KB]
+    OUT --> VF[verify the draft:<br/>numbers, ids, negation, citations]
   end
 ```
 
-`kb-ingest` never writes a page without a router entry, and `kb_lint.py` fails on any page the router cannot reach. Every page, and every research `KB/` folder, is chunked, embedded and stored in the vector store `.rag/` for retrieval.
+There is nothing to choose. `kb_rag.py search <question>` works with no packages installed and improves by itself when it finds a model. Each technique decides when it applies:
+
+| Technique | Applies when | With no packages | When more is available |
+|---|---|---|---|
+| Hybrid search (vectors + BM25, RRF) | every question; an id shifts the weight to BM25 | hashed vectors | multilingual model via `fastembed` or `sentence-transformers` |
+| Decoupled chunking | a section is longer than a chunk; shorter ones stay whole. Search sees the small chunk, Claude gets its section | yes | |
+| Contextual retrieval | every chunk | title, summary, heading path, the section's lead sentence | a small LLM writes the context (`AUTOLEARN_LLM`) |
+| Late chunking | the model exposes token vectors and sees at least 256 tokens | off | turns itself on, for example with `BAAI/bge-small-en-v1.5` |
+| Rerank | every non-exact question | built-in: coverage, proximity, phrase and literal match | cross-encoder; an English-only one sits out on other languages |
+| GraphRAG, local | a relation question about a known entity | relations from patterns | an LLM adds relations |
+| GraphRAG, global | a question about the whole base, with 3+ documents | every document gets a voice, recurring terms, entity clusters, time filter | |
+| Corrective RAG | every result is graded; correction runs only when it is not `CORRECT` | splits compound questions, repairs inflected terms, names what is missing, sends Claude to repo docs and the web | the embedding model vouches for paraphrases |
+| Faithfulness (Self-RAG) | `verify` on a draft with numbers or ids, or built on a partial result (a `kb-router` step) | yes, exit 1 on a failure | |
+| Streaming / CDC | every write (hook), every search, `watch`, `events` | re-embeds changed chunks only, journals each change | |
+
+Measured against the previous engine with [`scripts/rag_eval.py`](scripts/rag_eval.py), on 24 questions about this repo's real docs, then on questions built for each technique:
+
+| Top-1 / top-3 / MRR, 24 real questions | v0.2.3 | v0.3.0 |
+|---|---:|---:|
+| No packages | 0.79 / 0.92 / 0.87 | 0.83 / 1.00 / 0.91 |
+| `fastembed` with the default multilingual MiniLM | 0.50 / 0.71 / 0.63 | 0.79 / 1.00 / 0.89 |
+| The same plus its cross-encoder | | 0.88 / 0.96 / 0.92 |
+
+| Other checks, with and without the model | v0.2.3 | v0.3.0 |
+|---|---:|---:|
+| 9 questions with no answer in the base: refused | 3 | 9 |
+| 3 multi-hop questions: documents found | 0.72 | 1.00 |
+| 2 whole-base questions: documents found | 0.70 to 0.80 | 1.00 |
+| 5 Russian questions on English docs, MiniLM: in the top 3 | 3 | 2 |
+
+The last row is a regression: child chunks carry less topic than whole sections when no word can match. So the engine tells Claude to ask again in the language of the notes; asked in English, 4 of the 5 are found. Late chunking on `bge-small-en-v1.5` moved MRR from 0.91 to 0.93 and lost one refusal, which is no clear win on a set this small. These sets are small, the targeted corpus was written to exercise these techniques, and the thresholds were set looking at them, so read this as a regression floor rather than a promise. More in [docs/knowledge-router.md](docs/knowledge-router.md).
+
+`kb-ingest` never writes a page without a router entry, and `kb_lint.py` fails on any page the router cannot reach. Every page, and every research `KB/` folder, is indexed for retrieval.
 
 ```text
 ~/.claude/autolearn/knowledge/
@@ -262,7 +303,8 @@ flowchart TB
 ├── topics/<slug>.md      # distilled notes, every fact with its source
 ├── projects/<repo>.md    # one page per repository: purpose, layout, commands, conventions, pitfalls
 ├── required-docs.md      # checklists every task is checked against
-├── .rag/                 # vector store: meta.json + vectors.f32, embedded on every write
+├── .rag/                 # the index: meta.json, vectors.f32, changes.jsonl
+├── .stream/              # documents received through `kb_rag.py events`
 └── .router-log.tsv       # hits and misses, feeding /learn and kb-ingest
 ```
 
@@ -274,7 +316,7 @@ sources: https://wiki.example.com/refunds ✅ · docs/adr/0012-refunds.md ✅
 updated: 2026-10-21
 ```
 
-`kb_rag.py search refund webhook` ranks chunks by fusing embedding similarity with BM25 (exact ids and names win) and returns the best ones in full with `path:line`, within an 8 KB budget. Embeddings come from a multilingual model when `fastembed` or `sentence-transformers` is installed (`pip install fastembed`), otherwise from a standard-library hashing fallback; vectors live in `.rag/vectors.f32`, and the `kb_autoindex` hook embeds every write to the KB or a research `KB/` folder in the background. `kb_route.py refund webhook` returns the matching curated block, the exact line ranges and sizes of the sections to read, and `sed -n` commands that fit an 8 KB budget; anything larger goes to a subagent. More in [docs/knowledge-router.md](docs/knowledge-router.md).
+`kb_route.py refund webhook` returns the matching curated block, the exact line ranges and sizes of the sections to read, and `sed -n` commands that fit an 8 KB budget; anything larger goes to a subagent.
 
 ## What's inside
 
@@ -316,7 +358,7 @@ If one of your own files has the same name as an autolearn skill, the installer 
 - **Human-approved self-modification.** Agents write only to the data directory. Prompts, skills, settings, `CLAUDE.md`, pipeline rules and extra reviewers change only after you approve a proposal.
 - **Lessons come from trusted text only:** your own messages and pipeline artifacts, never tool output or web pages, so injected instructions cannot persist.
 - **No hook auto-approves anything.** Hooks deny with a reason and the fix, or stay silent.
-- **Local and private.** No telemetry and no network calls from any hook or script. The feedback hook stores short, secret-redacted excerpts on your disk only.
+- **Local and private.** No telemetry and no network calls from any hook or script, with two opt-ins you control: a first download of an embedding or reranking model you installed support for, and an LLM for richer index context. By default that LLM can only be an Ollama server on your own machine; sending notes to Claude needs `AUTOLEARN_LLM=claude`. The feedback hook stores short, secret-redacted excerpts on your disk only.
 - **No supply-chain surprises.** `/skill-radar` reads and grades third-party skills and MCP servers but never installs them.
 - **Reversible.** The data directory is under git, the installer backs up what it replaces, and the uninstaller moves instead of deleting.
 
@@ -324,10 +366,14 @@ See [SECURITY.md](SECURITY.md) and [docs/hooks.md](docs/hooks.md).
 
 ## Status and limitations
 
-- **v0.2.3.** The hooks and scripts are covered by tests; the agent prompts come from daily use but have not been measured on a benchmark yet.
+- **v0.3.0.** The hooks and scripts are covered by tests; the agent prompts come from daily use but have not been measured on a benchmark yet.
 - **Claude Code only.** There are no adapters for Codex, Cursor or other hosts.
 - **Feedback capture is regex-based.** It recognises common phrasings in 15 languages and misses paraphrases; `/learn` also reads the corrections in the current conversation.
-- **The knowledge router is keyword-based**, not semantic search.
+- **Retrieval is strongest with an embedding model.** Without one (`pip install fastembed`) search is lexical plus hashed vectors: paraphrases are often missed and a question in another language than the notes finds nothing (0 of 5 in the benchmark). With one, such a question is still weak (2 of 5 in the top 3), so the output asks Claude to repeat it in the language of the notes.
+- **Verified on real models:** `fastembed` with two embedding models and a cross-encoder. Checked against stand-ins that follow their APIs: `sentence-transformers`, Ollama and `AUTOLEARN_LLM=claude`.
+- **The graph reads stated relations.** Without an LLM, entities and relations come from patterns in English and Russian ([add a language](skills/research/scripts/ragkit/lang.json)), so it follows "X depends on Y", not relations left implied.
+- **`verify` is a lexical check.** It catches wrong numbers and ids, flipped negation, bad citations and claims the base does not hold; it will not catch a subtle misreading.
+- **No connectors are bundled.** `kb_rag.py events` takes changes from Confluence, Notion or anything else as JSON lines, but something has to send them.
 - **Plugin-mode gates rely on `agent_type`** in the hook input; the install script does not.
 
 ## How it compares
@@ -338,7 +384,7 @@ The multi-agent plan -> review pipeline is common ground: superpowers, compound-
 
 <details>
 <summary><b>Does it need any Python packages?</b></summary>
-No. Hooks and scripts use the Python 3.9+ standard library only. Tests run with <code>python3 -m unittest</code>.
+No. Hooks and scripts use the Python 3.9+ standard library only. Tests run with <code>python3 -m unittest</code>. If <code>fastembed</code> or <code>sentence-transformers</code> is installed, retrieval picks up real embeddings and a cross-encoder by itself.
 </details>
 
 <details>
@@ -379,4 +425,4 @@ New feedback phrasings, reviewer archetypes that `/retro` produced for you, and 
 
 [MIT](LICENSE)
 
-<sub>Topics: claude-code · claude-code-plugin · claude-skills · agent-skills · claude-code-hooks · subagents · multi-agent · self-learning · continual-learning · agent-memory · knowledge-base · context-engineering · code-review · tdd</sub>
+<sub>Topics: claude-code · claude-code-plugin · claude-skills · agent-skills · claude-code-hooks · subagents · multi-agent · self-learning · continual-learning · agent-memory · knowledge-base · rag · graphrag · hybrid-search · context-engineering · code-review · tdd</sub>

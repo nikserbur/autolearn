@@ -6,6 +6,51 @@ All notable changes to this project are documented here. The format follows
 and `.claude-plugin/marketplace.json` together with every release, or plugin users will not
 receive the update.
 
+## [0.3.0] - 2026-11-04
+
+### Added
+- Self-routing retrieval: `kb_rag.py search` picks a route per query (`exact`, `local`, `graph`,
+  `global`) from the query's shape and what the base holds; `--mode` overrides. Engine in `ragkit/`.
+- Decoupled chunking: search sees small children, the reader gets their parent section.
+- Contextual retrieval: each chunk is indexed with its document's title, summary, heading path and
+  lead sentence; an optional small LLM (`AUTOLEARN_LLM`) writes a better context in the background.
+- Late chunking when the model exposes token vectors and sees 256+ tokens (`AUTOLEARN_LATE`).
+- GraphRAG: entities and typed relations per chunk; multi-hop walks with direction, paths between two
+  entities, entity clusters; whole-base questions give every document a voice, filter by period
+  and open with what recurs across documents. `kb_rag.py graph <entity>` shows what is known.
+- Rerank: a built-in reranker always, plus a cross-encoder on the matched chunk when available
+  (`AUTOLEARN_RERANK`), never downloaded during a search and kept from languages it cannot read.
+- Corrective RAG: every result gets a verdict (`CORRECT`, `AMBIGUOUS`, `INCORRECT`) that also drives the
+  `hit|partial|miss` log; compound questions are split and inflected terms repaired; the output names
+  what is missing and the next action. `kb-router` follows it, including the fallback to the web.
+- `kb_rag.py verify`: checks a drafted answer against the base (numbers, ids, negation, citations).
+- CDC: unchanged chunks keep their vectors, every known root is rescanned, `changes.jsonl` journals
+  changes; `kb_rag.py events` takes upsert / delete JSON lines from connectors, `kb_rag.py watch`
+  follows edits made outside Claude Code.
+- A noise floor per model and base, measured on neutral probes, so that verdicts do not depend on one model's cosine
+  scale.
+- `scripts/rag_eval.py` and golden question sets; floors are enforced in the tests.
+- `ragkit/lang.json`: language data of the engine (English, Russian); a new language needs no code.
+
+### Changed
+- Refuses instead of guessing: on the golden sets, questions with no answer in the base are
+  refused 9 of 9 times, against 3 of 9 before. Weak candidates stay listed as pointers.
+- Stores rebuild themselves once on upgrade and keep their research roots.
+- New data directories ignore `knowledge/.rag/` and `knowledge/.stream/` in git.
+
+### Fixed
+- Sections that moved since indexing are never shown as something else: each section's text is checked against
+  a digest. A search waits a moment for a running indexer and says so if it has to use the last snapshot.
+- `# comments` in code fences no longer split a section or take over its heading.
+- BOMs, invalid UTF-8 (now reported), and line counts past form feeds and U+2028.
+- Concurrent indexers could overwrite each other's temporary files, and a reader between the two file
+  swaps could pair new vectors with old metadata. There is now one writer at a time, and a checksum
+  catches a torn snapshot.
+- Identifiers were cut by the stemmer: `AUTOLEARN_PYTHON` matched every `autolearn`, and long numbers
+  sharing five digits were one term.
+- A folder whose name starts like another root's (`KB`, `KB2`) lost files on re-indexing.
+- A root that was not passed again went stale; every known root is now scanned on each refresh.
+
 ## [0.2.3] - 2026-11-03
 
 ### Fixed

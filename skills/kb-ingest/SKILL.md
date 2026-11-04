@@ -60,7 +60,14 @@ A project page is also registered as a topic block (`## Project: <repo>`).
 | topic page | <= 40 KB | split into subtopic pages, each with its own block |
 | project page | <= 15 KB | move details into topic pages, keep pointers |
 
-## 5. Lint, index, commit, report
+## 5. Write for retrieval
+Every chunk is indexed with its page's title and summary, so give a page a specific title and, if
+its first sentence does not say what it is about, a `summary: ...` line near the top. State relations
+plainly ("billing-api depends on Kafka", "X replaces Y"): the entity graph reads these sentences and
+answers "what breaks if Kafka goes down" from them. Keep periods in the title or headings ("Q3 2026"):
+questions about a period filter on them.
+
+## 6. Lint, index, commit, report
 Run `python3 "${CLAUDE_SKILL_DIR}/scripts/kb_lint.py"`. The `kb_autoindex` hook has already
 embedded the new chunks; without hooks run
 `python3 "${CLAUDE_SKILL_DIR}/../research/scripts/kb_rag.py" index`. Fix every ERROR

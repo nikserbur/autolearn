@@ -31,7 +31,7 @@ Design notes: [pipeline](pipeline.md), [learning loop](learning-loop.md), [knowl
 | `/learn` | manual or prompted | Inbox → lessons → proposals → you approve → applied |
 | `/retro` | "a bug slipped through" | Escaped-defect analysis → regression test, hook, rule, or a new reviewer |
 | `/skill-radar` | manual, monthly | Inventory + session mining + ecosystem scouting → install / build / skip |
-| `kb-router` | auto, on domain questions | Retrieves (RAG) the best chunks of the KB and research folders, ≤ 8 KB with `path:line`; topic map as the curated route; logs hits and misses |
+| `kb-router` | auto, on domain questions | Retrieves (RAG) from the KB and research folders, ≤ 8 KB with `path:line`, acts on the verdict (answer, rephrase and fill the gap, or go to the web), checks drafts with `verify`; topic map as the curated route; logs hits and misses |
 | `kb-ingest` | "remember this", router miss | Distills sources into chunk-friendly pages **and** registers them in the router, lints, re-indexes, commits |
 | `colleague-message` | "draft a message to..." | Drafts in your voice; learns from your edits and approvals; never sends |
 | `pr-description` | "describe the PR" | What / why / verification / known limitations; closing keyword only in the last PR |
@@ -53,9 +53,10 @@ Design notes: [pipeline](pipeline.md), [learning loop](learning-loop.md), [knowl
 
 | Script | Used by | Does |
 |---|---|---|
-| `skills/research/scripts/kb_rag.py` | research, kb-router, kb-ingest, kb_autoindex hook | Chunks Markdown by heading and TSV by row, embeds them (fastembed / sentence-transformers multilingual model, or stdlib hashing), stores vectors in `.rag/`, hybrid cosine + BM25 ranking boosted by the topic map, incremental re-embedding, budgeted output with `path:line`, logs hit/miss |
+| `skills/research/scripts/kb_rag.py` + `ragkit/` | research, kb-router, kb-ingest, kb_autoindex hook | Self-routing RAG: parent-child chunks, contextual retrieval, embeddings (fastembed / sentence-transformers, or stdlib hashing), late chunking, entity graph, incremental updates with a change journal; search routes each query, fuses vector, BM25 and graph rankings, reranks, grades (CRAG) and logs hit/miss; `verify` checks a draft against the base; `events` and `watch` take outside changes |
 | `skills/kb-router/scripts/kb_route.py` | kb-router | Ranks topic blocks, resolves `file#section` to line ranges with sizes, prints budgeted `sed` commands, logs hit/miss |
 | `skills/kb-ingest/scripts/kb_lint.py` | kb-ingest | Broken pointers, unroutable pages, size budgets |
 | `skills/learn/scripts/lessons.py` | learn, feature, merge-check | Inbox, cursor, proposals, extra-reviewer matching against a patch, run stats with tuning hints |
+| `scripts/rag_eval.py` | contributors, CI | Runs any engine version against a golden question set: top-1, top-3, MRR, recall, correct refusals |
 | `skills/skill-radar/scripts/scan_sessions.py` | skill-radar | Mines transcripts: repeated commands, failing/denied tools, skills used, repeated requests |
 | `skills/skill-radar/scripts/inventory.py` | skill-radar | Installed skills, agents, plugins and MCP server *names* (never their config) |
