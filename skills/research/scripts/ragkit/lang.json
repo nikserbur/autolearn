@@ -1,0 +1,61 @@
+{
+  "_readme": "Language data of the retrieval engine; the code stays language-neutral. To add a language, add a block with these keys. Text is matched lower-cased and with `fold` applied, so write words in folded form. Regex fragments of all languages are joined with |. `months` has 12 slots, January first; leave a slot empty when the word is ambiguous (English `may`). `probes` are everyday questions a knowledge base is unlikely to answer: how close they get measures the noise floor of an embedding model on this base.",
+  "languages": {
+    "en": {
+      "fold": {},
+      "stop_words": "a an and are as at be by for from has have how in is it its of on or that the this to was were what when where which who why will with we our you your not no do does did can could should would there about into if then than but so after before again once here both few more most other some such only own same too very just now also any may might must shall get got gets make made use used using like need needs want all each every happen happens happened",
+      "summary_labels": ["summary", "context"],
+      "quarter_ordinals": {"pattern": "\\b(?:first|second|third|fourth)\\s+quarter\\b", "values": {"first": "q1", "second": "q2", "third": "q3", "fourth": "q4"}},
+      "quarter_digit": "",
+      "months": ["january", "february", "march", "april", "", "june", "july", "august", "september", "october", "november", "december"],
+      "relations": {
+        "depends_on": ["depends on", "depend on", "relies on", "rely on", "requires", "needs", "is built on", "runs on"],
+        "uses": ["uses", "calls", "reads from", "writes to", "talks to", "sends to", "connects to", "publishes to", "stored in", "stores in"],
+        "causes": ["causes", "leads to", "results in", "breaks", "blocks", "triggers"],
+        "part_of": ["is part of", "belongs to"],
+        "owned_by": ["owned by", "maintained by"],
+        "replaces": ["replaces", "replaced"]
+      },
+      "reversed_relations": {"used by": "uses", "called by": "uses", "required by": "depends_on", "needed by": "depends_on", "caused by": "causes", "owns": "owned_by"},
+      "generic_subjects": "service system module component it this they he she we worker team note notes todo fact facts",
+      "negations": "never not no without none cannot",
+      "conjunctions": ["and", "as well as"],
+      "whole_base": "across|overall|recurring|main themes?|summar(?:y|ize|ise)",
+      "whole_base_weak": "all|every|each|common",
+      "aggregate_nouns": "problem|issue|theme|lesson|mistake|risk|incident|pain|failure|takeaway",
+      "aggregate_words": "common all every each across overall main",
+      "relation_signals": "depend|related|relationship|connect|impact|affect|break|goes down|blast radius|upstream|downstream|between|used by|\\buses\\b|chain|path from",
+      "impact_signals": "impact|affect|break|goes down|blast|used by|who uses|what uses|downstream",
+      "upstream_signals": "what does .* (?:depend|use|need)|upstream",
+      "probes": ["how to bake sourdough bread at home", "best hiking trails in the mountains", "symptoms of the common cold in children", "history of the roman empire", "how to train a puppy to sit"]
+    },
+    "ru": {
+      "fold": {"ё": "е"},
+      "stop_words": "а в во на не но по с со к ко у о об от до за из для что как это эта этот эти то же ли бы был была было были быть есть нет да или и при над под про там тут где когда кто чем чего кому ему ей их его ее мы вы они он она оно я ты мне нас вас нам вам себя свой своя свои такой такая такие так тоже уже еще очень можно нужно надо какой какая какое какие каких какую почему зачем сколько после перед снова только также более менее все всех всем эту этой этого этих том той тем ними них нему бывает происходит происходят стать",
+      "summary_labels": ["описание", "контекст"],
+      "quarter_ordinals": {"pattern": "\\b(?:перв|втор|трет|четверт)\\w*\\s+квартал\\w*", "values": {"перв": "q1", "втор": "q2", "трет": "q3", "четверт": "q4"}},
+      "quarter_digit": "\\b[1-4][\\s-]*(?:й|ый|ом|м)?\\s*кв(?:артал\\w*|\\.)?(?!\\w)",
+      "months": ["январ\\w*", "феврал\\w*", "март\\w*", "апрел\\w*", "ма[йяе]", "июн\\w*", "июл\\w*", "август\\w*", "сентябр\\w*", "октябр\\w*", "ноябр\\w*", "декабр\\w*"],
+      "relations": {
+        "depends_on": ["зависит от", "зависят от", "опирается на", "требует", "нуждается в", "работает на", "построен на"],
+        "uses": ["использует", "используют", "обращается к", "читает из", "пишет в", "отправляет в", "подключается к", "ходит в", "хранит в", "хранится в", "хранятся в", "лежит в", "лежат в", "публикует в"],
+        "causes": ["приводит к", "ломает", "блокирует", "запускает"],
+        "part_of": ["входит в", "является частью"],
+        "owned_by": ["принадлежит", "поддерживается"],
+        "replaces": ["заменяет", "заменил", "заменили"]
+      },
+      "reversed_relations": {"используется в": "uses", "вызывается из": "uses", "нужен для": "depends_on", "нужна для": "depends_on", "нужно для": "depends_on", "владеет": "owned_by"},
+      "generic_subjects": "сервис система модуль компонент он она оно они это мы команда",
+      "negations": "не нет без ни",
+      "conjunctions": ["и", "а также"],
+      "whole_base": "в целом|по всем|у всех|во всех|для всех|всех команд|общие проблем|общих проблем|обзор|повторяющ|сквозн|чаще всего|тренд|тенденц|резюмируй|сводк",
+      "whole_base_weak": "все|всех|всем|кажд\\w+|общие|общих",
+      "aggregate_nouns": "проблем|ошибк|ошибок|риск|\\bтем[аыу]?\\b|вывод|урок|инцидент|сложност",
+      "aggregate_words": "общие общих общая общее все всех всем каждой каждая каждого каждом целом",
+      "relation_signals": "связан|связь|зависит|зависим|влияет|влияни|сломается|ломается|упадет|отключ|через что|использует|цепочк",
+      "impact_signals": "сломается|ломается|упадет|отключ|влия|кто использует",
+      "upstream_signals": "от чего зависит|что использует",
+      "probes": ["как приготовить домашний хлеб", "лучшие маршруты для походов в горах", "правила игры в шахматы", "цены на билеты в оперу"]
+    }
+  }
+}

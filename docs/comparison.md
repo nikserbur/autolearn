@@ -15,7 +15,7 @@ autolearn. What autolearn adds is a loop that grows guards from verified misses.
 | Who decides | you approve every behavior change | observation is automatic; evolution is user-invoked | you approve | you | automatic capture |
 | Root-causes which stage missed a bug | yes (`/retro` stage analysis) | not documented | not documented | not documented | not documented |
 | Context strategy | topic-map router, 8 KB budget, pointers-only session brief | top instincts injected at session start | CLAUDE.md | skills on demand | semantic search, context injection |
-| Semantic search over history | no (keyword router) | not documented | no | not documented | yes |
+| Semantic search over history | knowledge base and research notes, not chat history (vectors, BM25, entity graph) | not documented | no | not documented | yes |
 | Hosts | Claude Code only | Claude Code, Codex, Cursor, OpenCode and more | Claude Code | Claude Code, Codex, Cursor and more | Claude Code and other agents |
 | Maturity | v0.1.0, new | large user base | small | established | large user base |
 

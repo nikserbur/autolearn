@@ -1,6 +1,6 @@
 # autolearn
 
-> A self-learning harness for Claude Code: a 13-agent delivery pipeline (plan, critique, TDD under a verify gate, fresh-context review and merge gate) that turns user corrections, review findings and escaped bugs into evidence-backed lessons, new reviewer agents and new skills, a hypothesis-driven research loop with an independent reviewer, plus a local knowledge base with retrieval (RAG) and a topic-map router and a skill/MCP gap radar. Python standard library only; installs as a Claude Code plugin or via install.sh.
+> A self-learning harness for Claude Code: a 13-agent delivery pipeline (plan, critique, TDD under a verify gate, fresh-context review and merge gate) that turns user corrections, review findings and escaped bugs into evidence-backed lessons, new reviewer agents and new skills, a hypothesis-driven research loop with an independent reviewer, plus a self-routing local knowledge base (hybrid search, GraphRAG, corrective RAG, contextual retrieval, reranking, incremental updates) and a topic-map router and a skill/MCP gap radar. Python standard library only; installs as a Claude Code plugin or via install.sh.
 
 ## Start here
 - [README](README.md): what it does, quick start, components

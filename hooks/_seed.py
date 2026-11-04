@@ -25,7 +25,7 @@ FILES = {
 }
 RUNS_HEADER = ("date\trepo\tslug\tmode\ttasks\tcritic_rounds\tcritic_blocking\treview_rounds\t"
                "findings_confirmed\tfindings_refuted\tgate_blocks\tmerge_gate_findings\toutcome\n")
-GITIGNORE = "runs/\ninbox/\n.install-manifest\n.brief-state.json\n__pycache__/\n"
+GITIGNORE = "runs/\ninbox/\n.install-manifest\n.brief-state.json\n__pycache__/\nknowledge/.rag/\nknowledge/.stream/\n"
 
 
 def seed(home: pathlib.Path, templates: pathlib.Path) -> list:

@@ -39,12 +39,15 @@ and [EXPERIMENTS-TEMPLATE.tsv](EXPERIMENTS-TEMPLATE.tsv). Resuming an existing f
   background. Just write `KNOWLEDGE.md`, the journal and the reviews; nothing else to call.
   Without hooks (or to force it): `python3 "${CLAUDE_SKILL_DIR}/scripts/kb_rag.py" index --root <folder>/KB`.
 - Retrieval: `python3 "${CLAUDE_SKILL_DIR}/scripts/kb_rag.py" search --root <folder>/KB "<query>"`
-  ranks chunks by embedding similarity plus BM25 and returns the best ones with `path:line`
-  within 8 KB. The store holds every research KB ever indexed, so past projects answer too.
+  routes each query by itself and returns the best sections with `path:line` within 8 KB, with a
+  verdict: `CORRECT`, `AMBIGUOUS` (it names what is missing) or `INCORRECT` (the KB does not have
+  it; go to the code, papers and the web, then record the finding). "What depends on X" walks the
+  entity graph; "what did all rounds show" draws on every document and names what recurs. The store
+  holds every research KB ever indexed, so past projects answer too.
 - Embeddings: a multilingual model when `fastembed` or `sentence-transformers` is installed
   (`pip install fastembed`, model in `$AUTOLEARN_EMBED_MODEL`; if it lives in a venv, set
   `AUTOLEARN_PYTHON` to that python so the hook uses it too), otherwise the stdlib hashing
-  fallback. `kb_rag.py status` shows which one is in use; mention it once in the first check-in.
+  fallback. `kb_rag.py status` shows what is in use; mention it once in the first check-in.
 - Retrieve (several short queries) at fixed points: before writing the program, before every
   round plan, before recording a decision ("did we see this before?"), and give the same
   command to the reviewer. Never paste whole KB files into the context.
@@ -120,7 +123,8 @@ the program allows.
 Stop when the round count is reached, the deliverable passes its criterion on the honest
 windows with the reviewer's PASS, or two rounds in a row bring nothing (say so and propose a
 change of direction). Then write `BRIEF_<date>.md` (results, the best variant, what is proven
-and what is not, next steps), check the store is current (`kb_rag.py status`), and promote
+and what is not, next steps), check the store is current (`kb_rag.py status`), run `python3 "${CLAUDE_SKILL_DIR}/scripts/kb_rag.py" verify --root <folder>/KB --file <brief>` so that
+no number in it drifted from the journal (exit 1 lists what did), and promote
 the facts that matter beyond this project yourself: append them to
 `~/.claude/autolearn/knowledge/topics/research-<slug>.md` (one `##` section per fact group,
 every fact with its source in the research folder) and add or extend its block in

@@ -119,14 +119,36 @@ def check_manifests() -> None:
         warnings.append("manifests still contain YOUR_GITHUB_USER: run scripts/set-owner.sh before publishing")
 
 
+def is_multilingual_data(f: pathlib.Path) -> bool:
+    """Files whose subject is other languages: pattern and word lists, and the tests of multilingual retrieval."""
+    rel = f.relative_to(ROOT).as_posix()
+    return f.name in ("feedback-patterns.json", "lang.json") or rel.startswith("tests/fixtures/rag/") \
+        or bool(re.fullmatch(r"tests/test_rag_\w+\.py", rel))
+
+
 def check_english_only() -> None:
-    """The repo is English-only, except the multilingual templates/feedback-patterns.json."""
+    """The repo is English-only, except the multilingual data above."""
     for f in sorted(ROOT.rglob("*")):
-        if ".git" in f.parts or not f.is_file() or f.name == "feedback-patterns.json":
+        if ".git" in f.parts or not f.is_file() or is_multilingual_data(f):
             continue
         for n, line in enumerate(f.read_text(encoding="utf-8", errors="ignore").splitlines(), 1):
             if re.search(r"[\u0400-\u04FF]", line):
                 errors.append(f"{f.relative_to(ROOT)}:{n}: Cyrillic text (keep the repo English-only)")
+
+
+def check_retrieval_languages() -> None:
+    path = ROOT / "skills" / "research" / "scripts" / "ragkit" / "lang.json"
+    try:
+        langs = json.loads(path.read_text(encoding="utf-8"))["languages"]
+    except (OSError, ValueError, KeyError) as e:
+        errors.append(f"ragkit/lang.json: {e}")
+        return
+    required = set(next(iter(langs.values())))
+    for code, block in langs.items():
+        if set(block) != required:
+            errors.append(f"ragkit/lang.json: {code} differs in keys: {sorted(set(block) ^ required)}")
+        if len(block.get("months", [])) != 12:
+            errors.append(f"ragkit/lang.json: {code} needs 12 month slots")
 
 
 def check_feedback_patterns() -> None:
@@ -172,6 +194,7 @@ def main() -> int:
     check_python()
     check_english_only()
     check_feedback_patterns()
+    check_retrieval_languages()
     for w in warnings:
         print(f"WARN   {w}")
     for e in errors:

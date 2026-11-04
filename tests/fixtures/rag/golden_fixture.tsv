@@ -1,0 +1,21 @@
+kind	question	expected
+contextual	какая выручка у компании Globex за 2025	reports/globex-2025.md
+contextual	операционная маржа Acme	reports/acme-2025.md
+contextual	главный риск Globex	reports/globex-2025.md
+child	when do we escalate to the database team	handbook/oncall.md
+child	how long is the read-only mode before escalation	handbook/oncall.md
+exact	ERR-4417	runbooks/errors.md
+exact	что значит ошибка ERR-4471	runbooks/errors.md
+exact	что показал E03	journal/EXPERIMENTS.tsv
+rerank	webhook retry timeout	notes/webhooks-settings.md
+rerank	сколько живёт сессия ttl	architecture/session-service.md
+paraphrase	how do I roll back a release	notes/releases.md
+graph	что сломается, если отключить Redis	architecture/session-service.md&architecture/checkout.md
+graph	what breaks if Kafka goes down	architecture/billing-api.md&architecture/notifications.md&architecture/checkout.md
+graph	как связаны checkout и Redis	architecture/session-service.md&architecture/checkout.md
+global	какие общие проблемы интеграции были у всех команд в третьем квартале	retros/2026-q3-payments.md&retros/2026-q3-search.md&retros/2026-q3-mobile.md&retros/2026-q3-growth.md&retros/2026-q3-platform.md
+global	what integration problems were common across all teams in Q3	retros/2026-q3-payments.md&retros/2026-q3-search.md&retros/2026-q3-mobile.md&retros/2026-q3-growth.md&retros/2026-q3-platform.md
+ood	настройка ingress в kubernetes	-
+ood	vacation policy for contractors	-
+ood	рецепт борща с фасолью	-
+ood	stripe chargeback dispute window	-
