@@ -234,32 +234,33 @@ Remember: back-of-queue sells are toxic, about -0.03 per lot.
 
 ## Knowledge base, retrieval (RAG) and router
 
+Writing is automatic and touches only what changed:
+
 ```mermaid
-flowchart TB
-  subgraph Write["Write: automatic, only what changed"]
-    direction LR
-    W[Claude writes .md / .tsv<br/>also: search, watch, events] --> CDC[content hashes:<br/>changed chunks only]
-    CDC --> PC[sections as parents,<br/>small chunks as children]
-    PC --> CX[context for each chunk:<br/>title, summary, headings<br/>or a small LLM]
-    CX --> EM[embeddings<br/>late chunking if the model allows]
-    CX --> GR[entities and relations]
-    EM --> VS[(knowledge/.rag/)]
-    GR --> VS
-  end
-  subgraph Read["Read: one command, routed per question"]
-    direction LR
-    Q[question] --> RT{route}
-    RT -- "E99, PAY-123 or<br/>a specific question" --> H[vectors + BM25 + graph<br/>fused with RRF]
-    RT -- "what breaks if X is off" --> GW[graph walk] --> H
-    RT -- "problems of all teams" --> GL[every document,<br/>what recurs, clusters]
-    H --> RR[rerank: cross-encoder<br/>or built-in]
-    RR --> CR{CRAG grade}
-    GL --> CR
-    CR -- CORRECT --> OUT[sections with path:line<br/>within 8 KB]
-    CR -- AMBIGUOUS --> FIX[split the question, repair terms,<br/>name what is missing] --> OUT
-    CR -- INCORRECT --> WEB[say so: repo docs, tools, web,<br/>then write it into the KB]
-    OUT --> VF[verify the draft:<br/>numbers, ids, negation, citations]
-  end
+flowchart LR
+  W[Claude writes<br/>.md / .tsv] --> CDC[content hashes:<br/>changed chunks only]
+  CDC --> PC[sections as parents,<br/>small chunks as children]
+  PC --> CX[context for each chunk]
+  CX --> EM[embeddings]
+  CX --> GR[entities, relations]
+  EM --> VS[(knowledge/.rag/)]
+  GR --> VS
+```
+
+Reading is one command, routed per question:
+
+```mermaid
+flowchart TD
+  Q[question] --> RT{route}
+  RT -- "an id or a specific question" --> H[vectors + BM25 + graph,<br/>fused with RRF, then reranked]
+  RT -- "what breaks if X is off" --> GW[graph walk] --> H
+  RT -- "problems of all teams" --> GL[every document,<br/>what recurs, clusters]
+  H --> CR{CRAG grade}
+  GL --> CR
+  CR -- CORRECT --> OUT[sections with path:line<br/>within 8 KB]
+  CR -- AMBIGUOUS --> FIX[split the question, repair terms,<br/>name what is missing] --> OUT
+  CR -- INCORRECT --> WEB[say so: repo docs, tools, web,<br/>then write it into the KB]
+  OUT --> VF[verify the draft:<br/>numbers, ids, negation, citations]
 ```
 
 There is nothing to choose. `kb_rag.py search <question>` works with no packages installed and improves by itself when it finds a model. Each technique decides when it applies:
