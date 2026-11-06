@@ -56,13 +56,21 @@ class _Onnx:
         return _Output([[a + 0.1 * b for a, b in zip(_vec(texts[0][s:e]), whole)] for s, e in offsets])
 
 class TextEmbedding:
-    def __init__(self, model_name, cache_dir=None):
+    def __init__(self, model_name, cache_dir=None, local_files_only=False):
+        cached = os.environ.get("FAKE_EMBED_CACHE")
+        if cached and local_files_only and not os.path.exists(cached):
+            raise ValueError("model is not cached")
+        if cached and not local_files_only:
+            open(cached, "w").close()
         self.model = _Onnx(int(os.environ.get("FAKE_WINDOW", "128")))
         self.name = model_name
 
     def embed(self, texts):
         if os.environ.get("FAKE_EMBED_FAIL") and not texts[0] == "probe":
             raise RuntimeError("the model broke")
+        if os.environ.get("FAKE_EMBED_SLEEP") and not texts[0] == "probe" and len(texts) > 1:
+            import time
+            time.sleep(float(os.environ["FAKE_EMBED_SLEEP"]))
         for text in texts:
             yield _vec(text)
 '''
@@ -95,7 +103,7 @@ class _Tensor(list):
         return self
 
 class SentenceTransformer:
-    def __init__(self, model):
+    def __init__(self, model, local_files_only=False):
         self.max_seq_length = int(os.environ.get("FAKE_WINDOW", "128"))
 
     def tokenizer(self, text, return_offsets_mapping, truncation, max_length):

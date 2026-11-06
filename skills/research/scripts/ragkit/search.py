@@ -8,6 +8,7 @@
 """
 from __future__ import annotations
 
+import difflib
 import math
 import os
 import pathlib
@@ -16,16 +17,19 @@ import sys
 from collections import Counter
 from dataclasses import dataclass, field
 
-from .core import digest, is_identifier, normalize, periods, read_text, slug, split_lines, stem, strip_periods, tokens, words
-from .graph import Graph
-from .lang import AGGREGATE, AGGREGATE_WORDS, CONJUNCTIONS, IMPACT, RELATION, UPSTREAM, WHOLE_BASE, WHOLE_BASE_WEAK
+from .core import (ID_RE, compound_ids, is_identifier, matched_text, normalize, periods, read_section, read_text, slug, stem,
+                   strip_periods, tokens, words)
+from .graph import Graph, key_of
+from .lang import (AGGREGATE, AGGREGATE_WORDS, CONJUNCTIONS, IMPACT, LINK_QUESTIONS, LINK_WORDS, PERIOD_QUESTIONS, RELATION,
+                   RELATION_NOISE,
+                   UPSTREAM, WHOLE_BASE, WHOLE_BASE_SOFT, WHOLE_BASE_WEAK)
 
 K1, B = 1.2, 0.75
 RRF_K = 60
 W_HEAD, W_CTX = 1.0, 0.5  # BM25 weight of a term in the heading path and in the contextual prefix
 POOL = 50  # parents that reach the reranker
 CE_TOP = 20
-DEFAULT_K = {"exact": 5, "local": 5, "graph": 6, "global": 12}
+DEFAULT_K = {"exact": 5, "local": 5, "graph": 8, "global": 12}
 CUT = 0.45  # passages below this share of the best score are noise; they stay as pointers
 PER_DOC = 3  # most passages per document in a global answer
 LITERAL = 7  # letters of a query word that must appear as written
@@ -34,6 +38,8 @@ LITERAL = 7  # letters of a query word that must appear as written
 W_FUSION, W_NEAR, W_WHOLE, W_PROX, W_PHRASE, W_TITLE, W_LITERAL = 2.5, 0.6, 0.3, 0.4, 0.4, 0.3, 0.8
 W_COMPLETE = 0.8  # the chunk and its context hold every term of the question
 W_COS_MODEL, W_COS_HASH = 1.0, 0.5
+W_SOFT = 0.6  # a term found only in a chunk's context (title, summary) says less than one in its text or heading
+RARE_TERM = 0.8  # a missing term this close to the rarest in the query is what the question is about
 W_CROSS = 1.0  # a cross-encoder's opinion against the built-in score, both scaled to about 1
 FUZZY_WEIGHT = 0.6
 HASH_FLOOR, MODEL_FLOOR = 0.2, 0.3
@@ -54,12 +60,13 @@ class Query:
     def __init__(self, raw: str, drop: frozenset = frozenset()):
         self.raw = raw
         self.tags = periods(raw)
-        core = [w for w in words(strip_periods(raw)) if w not in drop]
-        self.terms = [stem(w) for w in core]
-        self.surfaces = {stem(w): w for w in core}
+        whole_ids = compound_ids(raw)
+        core = [w for w in words(strip_periods(ID_RE.sub(" ", normalize(raw)))) if w not in drop]
+        self.terms = [stem(w) for w in core] + whole_ids  # pg-orders-3 is one term: its parts answer nothing
+        self.surfaces = {**{stem(w): w for w in core}, **{w: w for w in whole_ids}}
         self.all_qs = set(tokens(raw)) - {stem(w) for w in drop}
         self.qs = set(self.terms) or self.all_qs
-        self.ids = {t for t in self.qs if is_identifier(t)}
+        self.ids = {t for t in self.qs if is_identifier(t) and (not t.isdigit() or len(t) >= 3)}
         self.fuzzy = {}  # corpus term -> the query term it stands in for
 
 
@@ -85,6 +92,7 @@ class Passage:
     matched: int
     total: int
     hop: int = 0
+    near: set = field(default_factory=set)
 
 
 @dataclass
@@ -103,6 +111,7 @@ class Result:
     corrected: str = ""
     reranker: str = "built-in"
     foreign: bool = False
+    sample: bool = False  # a question about the whole base: what is shown can never be proved complete
 
 
 class Index:
@@ -138,20 +147,24 @@ class Index:
         df = self.df.get(term, 0)
         return math.log(1 + (self.n - df + 0.5) / (df + 0.5))
 
-    def coverage(self, found: set, query: Query) -> float:
-        """Share of the query's information found, weighted by rarity; a term the base never saw weighs most."""
+    def coverage(self, found: set, query: Query, soft: frozenset = frozenset()) -> float:
+        """Share of the query's information found, weighted by rarity; a term the base never saw weighs most.
+        A term only in `soft` counts for less."""
         total = sum(self.idf(t) for t in query.qs)
         if not total:
             return 0.0
-        hit = sum(self.idf(t) * (FUZZY_WEIGHT if t in query.fuzzy else 1.0) for t in query.qs & found)
+        hit = sum(self.idf(t) * (FUZZY_WEIGHT if t in query.fuzzy else 1.0) * (W_SOFT if t in soft else 1.0)
+                  for t in query.qs & found)
         return hit / total
 
     def is_foreign(self, query: Query) -> bool:
-        """The query is in another alphabet than nearly all the notes, so no word of it can match."""
-        terms = [t for t in query.qs if not t.isdigit()]
-        if not terms or not self.df:
+        """The query is in another alphabet than nearly all the notes, so no word of it can match. Numbers and ids
+        belong to no language, and one known word is enough to say the notes do speak this one."""
+        terms = [t for t in query.qs if t.isalpha()]
+        vocabulary = [t for t in self.df if t.isalpha()]
+        if not terms or not vocabulary or any(self.df.get(t) for t in terms):
             return False
-        latin = sum(t.isascii() for t in self.df) / len(self.df)
+        latin = sum(t.isascii() for t in vocabulary) / len(vocabulary)
         return all(t.isascii() for t in terms) and latin <= 0.2 or not any(t.isascii() for t in terms) and latin >= 0.8
 
     def unknown_share(self, query: Query) -> float:
@@ -161,6 +174,11 @@ class Index:
     def fields(self, i: int) -> set:
         _, c, p = self.items[i]
         return set(c["tok"]) | set(p["htok"]) | set(p["ctok"]) | set(c.get("ltok", []))
+
+    def text_fields(self, i: int) -> set:
+        """What the chunk itself says, without the context added to it."""
+        _, c, p = self.items[i]
+        return set(c["tok"]) | set(p["htok"])
 
     def lexical(self, qs: set) -> dict:
         """BM25 with field weights over children: {item: score}."""
@@ -226,13 +244,25 @@ def plan_query(index: Index, raw: str, forced: str = "auto") -> Plan:
     id_share = len(query.ids) / max(len(query.qs), 1)
     if query.ids and (id_share >= 0.5 or re.fullmatch(r"[\w.-]*\d[\w.-]*", raw.strip())):
         return _planned(index, "exact", query, "the query is an identifier")
-    if (WHOLE_BASE.search(low) or (WHOLE_BASE_WEAK.search(low) and AGGREGATE.search(low))) and index.docs >= 3:
-        return _planned(index, "global", query, "the question is about the whole base")
-    if RELATION.search(low):
-        plan = _planned(index, "graph", query, "the question follows links between entities")
-        if plan.seeds:
+    if index.docs >= 3:
+        if WHOLE_BASE.search(low) or (WHOLE_BASE_WEAK.search(low) and AGGREGATE.search(low)):
+            return _planned(index, "global", query, "the question is about the whole base")
+        soft = WHOLE_BASE_SOFT.search(low) or (query.tags and PERIOD_QUESTIONS.search(low))
+        named = query.ids or index.graph.seeds(query.qs) or names_something(raw, query)
+        if soft and not named:
+            return _planned(index, "global", query, "the question is about the whole base")
+    if RELATION.search(low) or LINK_WORDS.search(low):
+        linked = [s for s in index.graph.seeds(query.qs) if index.graph.has_links(s)]
+        if len(linked) >= (1 if RELATION.search(low) else 2):
+            plan = _planned(index, "graph", query, "the question follows links between entities")
+            plan.seeds = linked
             return plan
     return _planned(index, "local", query, "a specific question")
+
+
+def names_something(raw: str, query: Query) -> bool:
+    """A capitalised word inside the question: "recurring retries with PayNord" is about PayNord, not the whole base."""
+    return any(w[0].isupper() and stem(normalize(w)) in query.qs for w in re.findall(r"\w+", raw)[1:])
 
 
 def _planned(index: Index, route: str, query: Query, why: str) -> Plan:
@@ -300,7 +330,8 @@ def reach(index: Index, key: tuple, best: int) -> set:
     the answer's words stand near each other, not scattered across its paragraphs."""
     kids = index.siblings[key]
     at = kids.index(best)
-    return set().union(*(index.fields(i) for i in kids[max(at - 1, 0):at + 2]))
+    window = kids[max(at - 1, 0):at + 2]
+    return set().union(*(index.fields(i) for i in window)), set().union(*(index.text_fields(i) for i in window))
 
 
 def lift(index: Index, query: Query, rows: dict, lex_weight: float = 1.0) -> list:
@@ -325,20 +356,21 @@ def lift(index: Index, query: Query, rows: dict, lex_weight: float = 1.0) -> lis
         best = kids[0][2]
         _, child, parent = index.items[best]
         cos = max(k[1] for k in kids)
-        near = reach(index, (f, p), best)
+        near, in_text = reach(index, (f, p), best)
         whole = set().union(*(index.fields(i) for i in index.siblings[(f, p)]))
-        cov = index.coverage(near, query)
+        cov = index.coverage(near, query, frozenset(near - in_text))
         score = W_FUSION * fusion[(f, p)] / top + W_NEAR * cov + W_WHOLE * index.coverage(whole, query) \
             + (W_COMPLETE if query.qs and query.qs <= near else 0.0) \
             + W_PROX * proximity(child["tok"], query.qs) + W_PHRASE * phrase_share(child["tok"], query.terms) \
             + W_TITLE * index.coverage(set(parent["htok"]), query) + cos_weight * max(cos, 0.0)
         last = slug(parent["head"].split(" > ")[-1]) if parent["head"] else ""
         boost = max(boosts.get((f, last), 1.0), boosts.get((f, ""), 1.0))
-        if query.ids:  # exact ids must win
-            boost *= 1 + sum(t in whole for t in query.ids) / len(query.ids)
+        if query.ids:  # exact ids must win, and the document named after one wins over those that mention it
+            named = set(parent["ctok"]) | set(parent["htok"])
+            boost *= 1 + (sum(t in whole for t in query.ids) + 0.5 * sum(t in named for t in query.ids)) / len(query.ids)
         if query.tags and tags_match(parent, query.tags):
             boost *= 1.5
-        out.append(Passage(f, p, parent, child, score * boost, cos, cov, len(query.qs & near), len(query.qs)))
+        out.append(Passage(f, p, parent, child, score * boost, cos, cov, len(query.qs & near), len(query.qs), near=near))
     out.sort(key=lambda r: -r.score)
     return out[:POOL]
 
@@ -351,7 +383,7 @@ def literal_share(index: Index, query: Query, passage: Passage) -> float:
     total = sum(weight for _, weight in pairs)
     if not total:
         return 0.0
-    return sum(weight for w, weight in pairs if w[:LITERAL] in text) / total
+    return sum(weight for w, weight in pairs if (w if is_identifier(w) else w[:LITERAL]) in text) / total
 
 
 def literal_rerank(index: Index, query: Query, passages: list) -> list:
@@ -363,33 +395,9 @@ def literal_rerank(index: Index, query: Query, passages: list) -> list:
 
 
 def tags_match(parent: dict, tags: set) -> bool:
-    """Quarters must match; a section with no year at all can still be from the year asked about."""
+    """Quarters must match; a section that names no year or month at all can still be from the one asked about."""
     have = set(parent.get("per", []))
-    years = {t for t in have if t[0] == "y"}
-    return all(t in have or (t[0] == "y" and not years) for t in tags)
-
-
-def read_section(path: str, parent: dict) -> str:
-    """The section as it was indexed, or "" if the file moved on since then: line numbers from an older index
-    would otherwise show the wrong text under a confident verdict."""
-    try:
-        lines = split_lines(read_text(path))
-    except OSError:
-        return ""
-    text = "\n".join(lines[parent["s"] - 1:parent["e"]])
-    if parent.get("sha") and digest(text) != parent["sha"]:
-        return ""
-    if path.endswith(".tsv") and parent["s"] > 1:
-        return lines[0] + "\n" + text
-    return text
-
-
-def matched_text(path: str, parent: dict, child: dict) -> str:
-    """The child's lines within its section; a journal row is one whole."""
-    text = read_section(path, parent)
-    if path.endswith(".tsv"):
-        return text
-    return "\n".join(split_lines(text)[child["s"] - parent["s"]:child["e"] - parent["s"] + 1])
+    return all(t in have or (t[0] in "ym" and not any(h[0] == t[0] for h in have)) for t in tags)
 
 
 def is_latin(text: str) -> bool:
@@ -425,15 +433,27 @@ def cross_rerank(passages: list, query: Query, ce) -> tuple:
     return sorted(head, key=lambda p: -p.score) + passages[CE_TOP:], ce.id
 
 
-def cosine_level(index: Index, query: Query, cos: float) -> float:
+def cosine_level(index: Index, query: Query, top: Passage) -> float:
     """What a close vector can vouch for. Across alphabets it is all there is, and never proof. Otherwise, terms
-    the base has never seen outweigh it: any machine-learning note sits near a question about gradient boosting."""
-    close = index.closeness(cos)
+    the base has never seen outweigh it: any machine-learning note sits near a question about gradient boosting.
+    And a vector alone never makes a CORRECT: some of the question's words have to be there too."""
+    close = index.closeness(top.cos)
     if index.is_foreign(query):
         return WEAK_COVERAGE if close >= CLOSE_WEAK else 0.0
     if index.unknown_share(query) >= UNKNOWN_SHARE:
         return WEAK_COVERAGE if close >= CLOSE_OK else 0.0
-    return OK_COVERAGE if close >= CLOSE_OK else WEAK_COVERAGE if close >= CLOSE_WEAK else 0.0
+    if close >= CLOSE_OK and top.cov >= 0.3:
+        return OK_COVERAGE
+    return WEAK_COVERAGE if close >= CLOSE_WEAK else 0.0
+
+
+def misses_key_term(index: Index, query: Query, found: set) -> bool:
+    """The rarest words are what a question is about: "the guest Wi-Fi password" is not answered by a note on the
+    guest Wi-Fi, however much of the question it covers."""
+    if len(query.qs) < 2:
+        return False
+    rarest = max(index.idf(t) for t in query.qs)
+    return any(index.idf(t) >= RARE_TERM * rarest for t in query.qs - found)
 
 
 def grade(index: Index, query: Query, top: Passage) -> tuple:
@@ -441,11 +461,12 @@ def grade(index: Index, query: Query, top: Passage) -> tuple:
     if top is None:
         return INCORRECT, 0.0
     whole = set().union(*(index.fields(i) for i in index.siblings[(top.file, top.p)]))
-    level = max(top.cov, cosine_level(index, query, top.cos))
-    unknown_ids = {t for t in query.ids if not index.df.get(t)}
-    if unknown_ids:
-        level = min(level, WEAK_COVERAGE if query.qs - query.ids & whole else 0.0)
+    level = max(top.cov, cosine_level(index, query, top))
+    if any(not index.df.get(t) for t in query.ids):
+        level = min(level, WEAK_COVERAGE if (query.qs - query.ids) & whole else 0.0)
     elif query.ids and not query.ids & whole:
+        level = min(level, OK_COVERAGE - 0.01)
+    elif misses_key_term(index, query, top.near):
         level = min(level, OK_COVERAGE - 0.01)
     if level >= OK_COVERAGE:
         return CORRECT, round(level, 2)
@@ -464,7 +485,7 @@ def cut(passages: list, k: int) -> tuple:
     if not passages:
         return [], []
     limit = CUT * passages[0].score
-    keep = [p for p in passages if p.score >= limit or p.hop][:k]
+    keep = ([p for p in passages if p.hop] + [p for p in passages if not p.hop and p.score >= limit])[:k]
     rest = [p for p in passages if p not in keep][:max(0, 8 - len(keep))]
     return keep, rest
 
@@ -486,7 +507,7 @@ def graph_edges(index: Index, plan: Plan, low: str) -> list:
         path = graph.between(seeds[0], seeds[1])
         if path:
             return path
-    direction = "in" if IMPACT.search(low) else "out" if UPSTREAM.search(low) else "both"
+    direction = "out" if UPSTREAM.search(low) else "impact" if IMPACT.search(low) else "both"
     return graph.walk(seeds[:3], direction) or graph.neighbours(seeds[:3])
 
 
@@ -505,10 +526,58 @@ def rel_path(index: Index, path: str) -> str:
     return pathlib.Path(path).relative_to(kb_abs).as_posix() if path.startswith(kb_abs + os.sep) else pathlib.Path(path).as_posix()
 
 
+def residual_terms(query: Query, seeds: list) -> Query:
+    """What a relation question asks beyond its entities and its relation words: "how does Kafka affect the
+    office coffee machine" is about a coffee machine, and a link from Kafka to something else does not answer it."""
+    names = {t for key in seeds for t in key.split()}
+    plain = ID_RE.sub(" ", normalize(query.raw))
+    for signal in (RELATION, IMPACT, UPSTREAM, LINK_QUESTIONS):
+        plain = signal.sub(" ", plain)
+    kept = [w for w in words(plain)
+            if stem(w) not in names and w not in RELATION_NOISE
+            and not (RELATION.search(w) or IMPACT.search(w) or UPSTREAM.search(w))]
+    return Query(" ".join(kept))
+
+
+def graph_verdict(index: Index, query: Query, plan: Plan, edges: list, keep: list) -> tuple:
+    """A stated link answers a question about links, and only that: what else was asked must be in the evidence too.
+    The links are real either way, so a gap makes this partial, not a refusal."""
+    if not any(e[2] != "related" for e in edges):
+        return (*grade(index, query, keep[0] if keep else None), [])
+    rest = residual_terms(query, plan.seeds)
+    if not rest.qs:
+        return CORRECT, 0.8, []
+    found = set().union(*(p.near for p in keep)) if keep else set()
+    level = index.coverage(found, rest)
+    missing = [rest.surfaces.get(t, t) for t in rest.terms if t not in found]
+    if level >= OK_COVERAGE and not misses_key_term(index, rest, found):
+        return CORRECT, 0.8, missing
+    return AMBIGUOUS, round(level, 2), missing
+
+
+def subject_chunks(index: Index, edges: list) -> dict:
+    """{item: hop} for the documents about the entities a walk reached: "what does gateway depend on" should show
+    what auth-svc is, not only the line of gateway's page that names it."""
+    first = {}
+    for f, entry in index.store.meta["files"].items():
+        if entry.get("subject"):
+            first.setdefault(key_of(entry["subject"]), f)
+    out = {}
+    for hop, a, _, b, _ in edges:
+        for key in (a, b):
+            f = first.get(key)
+            kids = index.siblings.get((f, 0)) if f else None
+            if kids:
+                out.setdefault(kids[0], hop + 1)
+    return out
+
+
 def retrieve_graph(index: Index, query: Query, plan: Plan, qvec, ce, k: int) -> Result:
     edges = graph_edges(index, plan, normalize(query.raw))
     hops = {}
     for hop, *_rest, i in sorted(edges, key=lambda e: e[0]):
+        hops.setdefault(i, hop)
+    for i, hop in subject_chunks(index, edges).items():
         hops.setdefault(i, hop)
     rank = {i: r for r, i in enumerate(hops, 1)}
     passages = lift(index, query, fused(index, query, plan, qvec, rank))
@@ -520,11 +589,15 @@ def retrieve_graph(index: Index, query: Query, plan: Plan, qvec, ce, k: int) -> 
         p.hop = section_hop.get((p.file, p.p), 0)
         if p.hop:
             p.score += 1.5 / p.hop
-    passages.sort(key=lambda r: -r.score)
+    passages.sort(key=lambda r: (-(1.0 / r.hop if r.hop else 0.0), -r.score))
     keep, rest = cut(passages, k)
-    typed = any(e[2] != "related" for e in edges)
-    verdict, confidence = (CORRECT, 0.8) if typed else grade(index, query, keep[0] if keep else None)
-    return Result(query.raw, "graph", plan.why, verdict, confidence, keep, rest, paths=render_edges(index, edges))
+    verdict, confidence, missing = graph_verdict(index, query, plan, edges, keep)
+    named = plan.seeds[:2]
+    if len(named) == 2 and LINK_QUESTIONS.search(normalize(query.raw)) and not index.graph.between(*named):
+        verdict, confidence = AMBIGUOUS, 0.5
+        missing = [f"a stated link between {index.graph.name(named[0])} and {index.graph.name(named[1])}", *missing]
+    return Result(query.raw, "graph", plan.why, verdict, confidence, keep, rest, paths=render_edges(index, edges),
+                  missing=missing)
 
 
 def surfaces_of(text: str) -> dict:
@@ -541,7 +614,7 @@ def themes_of(index: Index, query: Query, passages: list) -> list:
         text = read_section(p.file, p.parent)
         for term, forms in surfaces_of(text).items():
             surfaces.setdefault(term, Counter()).update(forms)
-            if term not in query.qs and len(term) > 2 and not term.isdigit():
+            if term not in query.qs and len(term) > 1 and not term.isdigit():
                 per_term.setdefault(term, {}).setdefault(p.file, p)
     of = len({p.file for p in passages})
     ranked = sorted((t for t, d in per_term.items() if len(d) >= 2), key=lambda t: (-len(per_term[t]), -index.idf(t), t))
@@ -585,30 +658,39 @@ def spread(passages: list, k: int) -> list:
     return out[:k]
 
 
+def absent_words(query: Query, passages: list) -> list:
+    """Query words none of these sections holds as written. A 5-letter stem can take `blocked` for `blockchain`, and
+    an honest "the base says nothing about blockchain" is worth more than a section on something else."""
+    texts = [normalize(read_section(p.file, p.parent)) for p in passages]
+    return [w for t, w in query.surfaces.items() if t in query.qs
+            and not any((w if is_identifier(w) else w[:LITERAL]) in text for text in texts)]
+
+
 def retrieve_global(index: Index, raw: str, plan: Plan, qvec, k: int) -> Result:
     """GraphRAG global search, map step: evidence from every document that has any, with what recurs across them.
-    The reduce step belongs to the reader, who has the themes and the sections side by side."""
+    The reduce step belongs to the reader, who has the themes and the sections side by side. Such an answer is a
+    sample of the base and nothing here can prove it complete, so it is never graded CORRECT."""
     query = Query(raw, drop=frozenset(AGGREGATE_WORDS))
-    passages = lift(index, query, fused(index, query, plan, qvec, {}))
-    by_period = [p for p in passages if tags_match(p.parent, query.tags)] if query.tags else []
-    in_period = len({p.file for p in by_period}) >= 2
-    if in_period:
-        passages = by_period
-    relevant = [p for p in passages if in_period or p.cov >= 0.25 or index.closeness(p.cos) >= CLOSE_WEAK]
+    passages = literal_rerank(index, query, lift(index, query, fused(index, query, plan, qvec, {})))
+    if query.tags:
+        passages = [p for p in passages if tags_match(p.parent, query.tags)]
+        if not passages:
+            return Result(raw, "global", plan.why, INCORRECT, 0.0, missing=["anything about the stated period"])
+    relevant = [p for p in passages if query.tags or p.cov >= 0.34 or index.closeness(p.cos) >= CLOSE_WEAK]
     selected = spread(relevant, k)
     note = ""
     if not selected:
+        if query.qs:
+            return Result(raw, "global", plan.why, INCORRECT, 0.0, passages[:2], missing=sorted(query.surfaces.values()))
         selected, note = overview_passages(index, query), " (overview by entity clusters)"
-    docs = {p.file for p in selected}
-    answered = sum(p.cov >= 0.3 or index.closeness(p.cos) >= CLOSE_WEAK for p in selected) / max(len(selected), 1)
-    if len(docs) >= 2 and answered >= 0.5 and not note:
-        verdict, confidence = CORRECT, round(answered, 2)
-    elif selected:
-        verdict, confidence = AMBIGUOUS, round(answered, 2)
-    else:
-        verdict, confidence = INCORRECT, 0.0
-    return Result(raw, "global", plan.why + note, verdict, confidence, selected, [],
-                  themes=themes_of(index, query, relevant or selected), clusters=clusters_of(index, docs))
+    if not selected:
+        return Result(raw, "global", plan.why, INCORRECT, 0.0)
+    absent = absent_words(query, selected)
+    if absent and not query.tags and not index.is_model and index.coverage(set(query.qs) - {stem(w) for w in absent}, query) < WEAK_COVERAGE:
+        return Result(raw, "global", plan.why, INCORRECT, 0.0, selected[:2], missing=absent)
+    solid = sum(p.cov >= 0.5 or index.closeness(p.cos) >= CLOSE_OK for p in selected) / len(selected)
+    return Result(raw, "global", plan.why + note, AMBIGUOUS, round(solid, 2), selected, [], missing=absent, sample=True,
+                  themes=themes_of(index, query, relevant or selected), clusters=clusters_of(index, {p.file for p in selected}))
 
 
 def split_parts(raw: str) -> list:
@@ -617,15 +699,15 @@ def split_parts(raw: str) -> list:
 
 
 def fuzzy_query(index: Index, raw: str):
-    """Terms the base never saw, replaced by a vocabulary term with the same start: an inflected form that the
-    5-letter stem split from its other forms, or a typo at the end of a word."""
+    """Terms the base never saw, replaced by the closest vocabulary term: an inflected form that the 5-letter stem
+    split from its other forms, or a typo."""
     query = Query(raw)
     vocab = sorted(index.df)
     swapped = []
     for term in list(query.qs):
         if index.df.get(term) or len(term) < 4 or term in query.ids:
             continue
-        near = [v for v in vocab if v[:4] == term[:4]]
+        near = [v for v in vocab if v[:4] == term[:4]] or difflib.get_close_matches(term, vocab, 1, 0.8)
         if near:
             best = max(near, key=lambda v: index.df[v])
             query.fuzzy[best] = term
@@ -640,21 +722,33 @@ def fuzzy_query(index: Index, raw: str):
     return query if swapped else None
 
 
+def query_vectors(emb):
+    """A model that fails at query time costs the vector ranking, not the answer: words still work."""
+    def embed(text: str):
+        try:
+            return emb.embed([text])[0]
+        except Exception as e:
+            print(f"! the embedding model failed ({e}); ranking by words only", file=sys.stderr)
+            return None
+    return embed
+
+
 def answer(index: Index, raw: str, emb=None, ce=None, mode: str = "auto", k: int = 0) -> Result:
     """The whole pipeline for one query, with one corrective pass when the first grade is not CORRECT."""
     if not raw.strip() or not index.n:
         return Result(raw, "local", "nothing to search", INCORRECT, 0.0)
     plan = plan_query(index, raw, mode)
-    embed = (lambda text: emb.embed([text])[0]) if emb is not None and index.has_vectors else (lambda text: None)
+    embed = query_vectors(emb) if emb is not None and index.has_vectors else (lambda text: None)
     foreign = index.is_foreign(Query(raw))
     want = k or (FOREIGN_K if index.is_model and foreign else DEFAULT_K[plan.route])
     qvec = embed(raw)
     if plan.route == "global":
-        return retrieve_global(index, raw, plan, qvec, want)
-    if plan.route == "graph" and plan.seeds:
-        return retrieve_graph(index, Query(raw), plan, qvec, ce, want)
-    result = retrieve_local(index, Query(raw), plan, qvec, ce, want)
-    result = result if result.verdict == CORRECT else _corrected(index, raw, plan, embed, qvec, ce, want, result)
+        result = retrieve_global(index, raw, plan, qvec, want)
+    elif plan.route == "graph" and plan.seeds:
+        result = retrieve_graph(index, Query(raw), plan, qvec, ce, want)
+    else:
+        result = retrieve_local(index, Query(raw), plan, qvec, ce, want)
+        result = result if result.verdict == CORRECT else _corrected(index, raw, plan, embed, qvec, ce, want, result)
     result.foreign = foreign
     return result
 

@@ -323,7 +323,7 @@ class GlobalSearch(RagCase):
     def test_every_team_gets_a_voice_however_chatty_one_of_them_is(self):
         result = self.search("какие общие проблемы интеграции были у всех команд в третьем квартале")
         self.assertEqual(result["route"], "global")
-        self.assertEqual(result["verdict"], "CORRECT")
+        self.assertEqual(result["verdict"], "AMBIGUOUS", "a sample of the base: words cannot prove it complete")
         paths = self.paths(result)
         for team in self.TEAMS:
             self.assertIn(team, paths)
@@ -380,12 +380,13 @@ class CorrectiveRag(RagCase):
             self.assertIn("verdict INCORRECT", out)
             self.assertIn("No chunk matches", out)
             self.assertIn("the web", out)
-            self.assertNotIn("=== ", out)
+            self.assertNotIn("=== ", out, "nothing is presented as an answer")
             self.assertEqual(self.logged()[2:], ["-", "miss"])
 
-    def test_refusal_still_lists_weak_candidates_as_pointers(self):
+    def test_refusal_still_shows_weak_candidates(self):
         out = self.run_engine("search", "--no-log", "how", "do", "I", "roll", "back", "a", "release")
-        self.assertIn("--- notes/releases.md", out)
+        self.assertIn("~== notes/releases.md", out)
+        self.assertIn("| To undo a bad version", out)
 
     def test_partly_answered_says_what_is_missing(self):
         self.write("topics/p.md", "# Quokka care\n\n## Food\n\nThe quokka eats leaves and bark every evening.\n")

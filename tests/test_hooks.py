@@ -376,7 +376,7 @@ class SessionBrief(HookCase):
         rag.mkdir(parents=True)
         (rag / "meta.json").write_text(json.dumps({"backend": "hash-512", "files": {}}))
         ctx = self.run_hook("session_brief.py", {"cwd": str(self.repo)})["hookSpecificOutput"]["additionalContext"]
-        self.assertIn("pip install fastembed", ctx)
+        self.assertIn("kb_rag.py setup", ctx)
         (self.home / ".brief-state.json").unlink()
         (rag / "meta.json").write_text(json.dumps({"backend": "fastembed:m", "files": {}}))
         out = self.run_hook("session_brief.py", {"cwd": str(self.repo)})

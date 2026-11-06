@@ -14,9 +14,10 @@ to `~/.claude/autolearn/`. The design keeps that surface small:
 | Risk | Mitigation |
 |---|---|
 | Hooks doing more than they say | stdlib-only Python, no network of their own, short and tested; read them before installing. `kb_autoindex` starts the indexer, which may fetch a model you installed support for and, by default, talk to an Ollama server only on this machine |
-| Notes leaving your machine | only with `AUTOLEARN_LLM=claude`, or `ollama` pointed at another host; `auto` refuses non-local hosts |
+| Notes leaving your machine | only with `AUTOLEARN_LLM=claude`, or `ollama` pointed at another host; `auto` refuses non-local hosts and reaches a local server past `$HTTP_PROXY` |
+| A confidential research folder joining other searches | an indexed folder stays in every later search; `kb_rag.py status` lists them and `kb_rag.py forget --root DIR` drops one |
 | Self-modification going wrong | agents write only to the data directory; prompts, skills, settings and `CLAUDE.md` change only after you approve a proposal; the data directory is a git repo |
-| Prompt injection through the knowledge base, web pages or third-party skills | all of it is treated as data; `al-skill-scout` flags instruction-like text as a red flag; nothing is installed automatically. The optional index LLM gets documents fenced as data and no tools, and its validated answers become search text and graph edges only |
+| Prompt injection through the knowledge base, web pages or third-party skills | all of it is treated as data; `al-skill-scout` flags instruction-like text as a red flag; nothing is installed automatically. Every line a note contributes to `kb_rag.py` output starts with `| `, so that a note cannot pass for an engine line. The optional index LLM gets documents inside a fence with a random name and no tools; its validated answers become search text and graph edges only, and only between things the text names |
 | Hostile `kb_rag.py events` input | ids are slugged and hashed, so they cannot leave `<KB>/.stream/`; documents over 1 MB and malformed events are rejected and reported |
 | Leaking secrets | `check_secrets.py` blocks commits with key-like strings; the feedback hook redacts excerpts; `inventory.py` never prints MCP configuration |
 | Private prompts on disk | the inbox stores short redacted excerpts locally only; `AUTOLEARN_CAPTURE=0` disables capture; `inbox/` is git-ignored |

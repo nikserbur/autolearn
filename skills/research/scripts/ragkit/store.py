@@ -19,22 +19,35 @@ import zlib
 from array import array
 
 from .chunks import parse_file
-from .core import EMBED_CHARS, SCHEMA, SKIP_DIRS, STEM, SUFFIXES, digest, read_text, slug, split_lines, tokens
+from .core import (EMBED_CHARS, MAX_FILE_BYTES, SCHEMA, SKIP_DIRS, STEM, SUFFIXES, digest, is_utf8, read_text, slug,
+                   split_lines, tokens)
 from .graph import doc_subject, extract, mid_sentence_names
 from .lang import PROBES
 from .models import late_enabled, late_pool, unit
 
-LOCK_STALE = 3600
+LOCK_STALE = 600  # the writer refreshes the lock file as it goes, so ten quiet minutes mean it is gone
 JOURNAL_MAX = 1_000_000
 LLM_MAX_CHUNKS = 60  # per run, so that a background index never turns into a long, costly batch
 LLM_MAX_TRIES = 3  # on one version of a file whose answers cannot be parsed
 EVENT_MAX_BYTES = 1_000_000
 
 
+def max_file_bytes() -> int:
+    try:
+        return int(float(os.environ["AUTOLEARN_MAX_FILE_MB"]) * 1_000_000)
+    except (KeyError, ValueError):
+        return MAX_FILE_BYTES
+
+
 def files(roots: list) -> list:
     out, seen = [], set()
     for root in roots:
-        for f in sorted(root.rglob("*")):
+        try:
+            found = sorted(root.rglob("*"))
+        except OSError as e:  # the folder is being changed under us: the next refresh sees it
+            print(f"! cannot scan {root}: {e}", file=sys.stderr)
+            continue
+        for f in found:
             if f.is_file() and f.suffix in SUFFIXES and not SKIP_DIRS & set(f.relative_to(root).parts) \
                     and not f.name.startswith(".") and f not in seen:
                 seen.add(f)
@@ -48,7 +61,7 @@ def _empty() -> dict:
 
 def _old_shape(meta: dict) -> dict:
     """Stores from before parent-child chunks: readable, one section per chunk, until they are rebuilt."""
-    for entry in meta.get("files", {}).values():
+    for entry in meta["files"].values():
         if "parents" in entry:
             continue
         entry["parents"] = [{"s": c["s"], "e": c["e"], "head": c.get("head", ""), "htok": c.get("htok", []),
@@ -56,6 +69,20 @@ def _old_shape(meta: dict) -> dict:
         for n, c in enumerate(entry.get("chunks", [])):
             c["p"] = n
     return meta
+
+
+def _readable(meta) -> dict:
+    """The store's metadata if this code can use it. Anything else is treated as no store, and rebuilt, instead of
+    crashing every command until someone deletes the folder by hand."""
+    try:
+        meta = _old_shape(meta)
+        for entry in meta["files"].values():
+            for c in entry["chunks"]:
+                _ = (c["tok"], c["row"], c["s"], c["e"], entry["parents"][c["p"]]["htok"])
+        meta.setdefault("backend", None)
+        return meta if isinstance(meta.get("dim"), int) else None
+    except (KeyError, TypeError, AttributeError, IndexError):
+        return None
 
 
 def roots_of(known: dict, kb: pathlib.Path) -> list:
@@ -72,6 +99,7 @@ def roots_of(known: dict, kb: pathlib.Path) -> list:
 class Store:
     def __init__(self, kb: pathlib.Path):
         self.kb, self.dir = kb, kb / ".rag"
+        self.building = False
         self.meta_path, self.vec_path = self.dir / "meta.json", self.dir / "vectors.f32"
         self.journal, self.lock_path, self.dirty_path = (self.dir / n for n in ("changes.jsonl", "lock", "dirty"))
         self.load()
@@ -84,10 +112,14 @@ class Store:
                 raw = self.vec_path.read_bytes()
             except (OSError, ValueError):
                 break
+            usable = _readable(meta)
+            if usable is None:
+                print(f"! {self.meta_path} is damaged; the index will be rebuilt", file=sys.stderr)
+                break
             if meta.get("crc") in (None, zlib.crc32(raw)):
                 self.vec = array("f")
                 self.vec.frombytes(raw[:len(raw) - len(raw) % 4])
-                self.meta = _old_shape(meta)
+                self.meta = usable
                 return
             time.sleep(0.05)
         self.meta, self.vec = _empty(), array("f")
@@ -124,6 +156,10 @@ class Store:
                 with contextlib.suppress(OSError):
                     self.lock_path.unlink()
 
+    def _heartbeat(self) -> None:
+        with contextlib.suppress(OSError):
+            os.utime(self.lock_path)
+
     def _lock_is_stale(self) -> bool:
         """The lock's owner died (a crash, a reboot), or it has been held for longer than any index takes."""
         try:
@@ -158,23 +194,39 @@ class Store:
             return None
         return [pathlib.Path(p) for p in text.splitlines() if p.strip()]
 
+    @staticmethod
+    def _signature(emb) -> dict:
+        # `stem` carries the schema so that an older engine, which compares it, rebuilds this store instead of crashing
+        return {"backend": emb.id, "dim": emb.dim, "stem": f"{STEM}/{SCHEMA}", "schema": SCHEMA, "late": late_enabled(emb)}
+
+    def needs_rebuild(self, emb) -> bool:
+        return any(self.meta.get(k) != v for k, v in self._signature(emb).items())
+
     def update(self, roots: list, emb, enrich=None) -> dict:
         """Apply what changed on disk. Returns {changed, added, removed, kept, embedded, enriched, events}."""
-        sig = {"backend": emb.id, "dim": emb.dim, "stem": STEM, "schema": SCHEMA, "late": late_enabled(emb)}
-        if any(self.meta.get(k) != v for k, v in sig.items()):
+        sig = self._signature(emb)
+        if self.needs_rebuild(emb):
             kept_roots = self.meta.get("roots") or roots_of(self.meta["files"], self.kb)
             self.meta, self.vec = {**sig, "roots": kept_roots, "files": {}}, array("f")
         names = {str(r.resolve()) for r in roots} | set(self.meta.get("roots", []))
         live_roots = sorted(n for n in names if pathlib.Path(n).exists())
         old_files, old_vec, d = self.meta["files"], self.vec, emb.dim
-        live, events = {}, []
+        live, events, skipped = {}, [], []
         touched = False
+        limit = max_file_bytes()
         for f in files([pathlib.Path(r) for r in live_roots]):
             key, prev = str(f.resolve()), old_files.get(str(f.resolve()))
-            st = f.stat()
+            try:
+                st = f.stat()
+            except OSError:  # gone since the scan: the next refresh records that
+                continue
+            if st.st_size > limit:
+                skipped.append(key)
+                continue
             if prev and prev.get("mtime") == st.st_mtime and prev.get("size") == st.st_size:
                 live[key] = prev
                 continue
+            self._heartbeat()
             try:
                 text = read_text(f)
             except OSError as e:  # vanished or unreadable right now: the next refresh sees it
@@ -192,6 +244,11 @@ class Store:
             if key not in live:
                 events.append({"op": "delete", "path": key, "added": 0, "removed": len(entry["chunks"]), "kept": 0,
                                "embedded": 0})
+        for key in sorted(set(skipped) - set(self.meta.get("skipped", []))):
+            print(f"! {key} is over {limit // 1_000_000} MB and was not indexed (AUTOLEARN_MAX_FILE_MB changes the limit)",
+                  file=sys.stderr)
+        touched = touched or skipped != self.meta.get("skipped", [])
+        self.meta["skipped"] = skipped
         enriched, tried = self._enrich(live, enrich, emb) if enrich else (0, False)
         stats = {k: sum(e[k] for e in events) for k in ("added", "removed", "kept", "embedded")}
         stats.update(changed=len(events), enriched=enriched, events=events)
@@ -202,8 +259,9 @@ class Store:
     def _refresh(self, path: pathlib.Path, text: str, st, prev: dict, emb) -> tuple:
         """The new store entry of a changed file: unchanged chunks keep their vectors."""
         doc = parse_file(path, text)
-        if "\ufffd" in text:
-            print(f"! {path} is not valid UTF-8: some characters are lost, so searches can miss them", file=sys.stderr)
+        legacy = not is_utf8(path.read_bytes())
+        if legacy:
+            print(f"! {path} is not valid UTF-8: read in a legacy encoding, some characters may be wrong", file=sys.stderr)
         late = late_enabled(emb)
         subject = doc_subject(doc["title"], path.stem)
         known = mid_sentence_names(text)
@@ -234,7 +292,7 @@ class Store:
         self._embed(todo, doc["text"], emb, late)
         kept = len(chunks) - len(todo)
         entry = {"mtime": st.st_mtime, "size": st.st_size, "sha": digest(text), "title": doc["title"],
-                 "subject": subject, "parents": parents, "chunks": chunks}
+                 "subject": subject, "legacy": legacy, "parents": parents, "chunks": chunks}
         event = {"op": "modify" if prev else "add", "path": str(path.resolve()), "added": len(todo),
                  "removed": max(len((prev or {}).get("chunks", [])) - kept, 0), "kept": kept, "embedded": len(todo)}
         return entry, event
@@ -261,6 +319,7 @@ class Store:
             pending = [c for c in entry["chunks"] if c.get("llm") != enrich.id][:LLM_MAX_CHUNKS - done]
             if not pending or entry.get("llm_tries", 0) >= LLM_MAX_TRIES:
                 continue
+            self._heartbeat()
             try:
                 text = "\n".join(split_lines(read_text(key)))
                 answers = enrich.enrich(entry.get("title", ""), text, [text[c["cs"]:c["ce"]] for c in pending])
@@ -296,7 +355,7 @@ class Store:
                 c["row"] = n
                 n += 1
         raw = vec.tobytes()
-        self.meta.update(files=live, roots=live_roots, crc=zlib.crc32(raw))
+        self.meta.update(files=live, roots=live_roots, crc=zlib.crc32(raw), python=sys.executable)
         self.vec = vec
         self.meta["noise"] = self._noise_floor(emb)
         self.dir.mkdir(parents=True, exist_ok=True)
@@ -317,6 +376,18 @@ class Store:
                 self.journal.write_text("\n".join(lines[len(lines) // 2:]) + "\n", encoding="utf-8")
             with open(self.journal, "a", encoding="utf-8") as f:
                 f.write("".join(json.dumps({"ts": now, **e}, ensure_ascii=False) + "\n" for e in events))
+
+    def forget(self, root: pathlib.Path, emb) -> int:
+        """Stop searching a folder: an indexed root otherwise stays in every search for good. Files are left alone."""
+        target = str(root.resolve())
+        live = {k: v for k, v in self.meta["files"].items() if not k.startswith(target + os.sep)}
+        gone = len(self.meta["files"]) - len(live)
+        roots = [r for r in self.meta.get("roots", []) if r != target]
+        if gone or len(roots) != len(self.meta.get("roots", [])):
+            events = [{"op": "delete", "path": k, "added": 0, "removed": len(v["chunks"]), "kept": 0, "embedded": 0}
+                      for k, v in self.meta["files"].items() if k not in live]
+            self._save(live, roots, self.vec, self.meta["dim"], events, emb)
+        return gone
 
     def last_change(self) -> dict:
         with contextlib.suppress(OSError, ValueError, IndexError):
@@ -395,4 +466,6 @@ def apply_events(kb: pathlib.Path, lines: list) -> tuple:
             applied += 1
         except (ValueError, KeyError, TypeError) as e:
             errors.append(f"line {n}: {e}")
+        except RecursionError:
+            errors.append(f"line {n}: nested too deeply")
     return applied, errors

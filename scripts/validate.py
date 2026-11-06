@@ -129,7 +129,7 @@ def is_multilingual_data(f: pathlib.Path) -> bool:
 def check_english_only() -> None:
     """The repo is English-only, except the multilingual data above."""
     for f in sorted(ROOT.rglob("*")):
-        if ".git" in f.parts or not f.is_file() or is_multilingual_data(f):
+        if ".git" in f.parts or ".claude" in f.relative_to(ROOT).parts or not f.is_file() or is_multilingual_data(f):
             continue
         for n, line in enumerate(f.read_text(encoding="utf-8", errors="ignore").splitlines(), 1):
             if re.search(r"[\u0400-\u04FF]", line):

@@ -10,7 +10,7 @@ import re
 from collections import Counter, defaultdict, deque
 
 from .core import normalize, sentences, stem
-from .lang import FOLD, GENERIC, RELATIONS, REVERSED_RELATIONS, STOP, UPPER
+from .lang import FOLD, GENERIC, RELATION_BLOCKERS, RELATIONS, REVERSED_RELATIONS, STOP, UPPER, WELL_KNOWN
 
 ALL_PHRASES = sorted({**RELATIONS, **REVERSED_RELATIONS}, key=len, reverse=True)
 VERB = re.compile(r"(?<!\w)(" + "|".join(map(re.escape, ALL_PHRASES)) + r")(?!\w)|(->|\u2192|=>)", re.I)
@@ -23,6 +23,8 @@ ENTITY = re.compile("|".join([
     rf"\b[{UPPER}][\w-]*(?:\s+[{UPPER}][\w-]*)*\b",          # Redis, Order Service, ERP
 ]))
 MAX_PER_CHUNK = 12
+IMPACT_THROUGH_IN = {"depends_on", "uses", "part_of"}  # who stops working when the other end stops
+IMPACT_THROUGH_OUT = {"causes", "flows_to"}
 
 
 def key_of(name: str) -> str:
@@ -71,7 +73,11 @@ def _sentence_entities(sent: str, known_names: set) -> list:
             continue
         if not _is_sentence_noise(sent, m, known_names):
             out.append((m.start(), m.end(), name))
-    return out
+    taken = [(a, b) for a, b, _ in out]
+    for m in re.finditer(r"(?<![\w`/.-])[a-z][a-z0-9]+(?![\w`/-])", sent):
+        if (m.group(0) in WELL_KNOWN or m.group(0) in known_names) and not any(a < m.end() and m.start() < b for a, b in taken):
+            out.append((m.start(), m.end(), m.group(0)))
+    return sorted(out)
 
 
 def _subject(left: str, ents: list, subject: str) -> str:
@@ -91,6 +97,11 @@ def _objects(right: str, offset: int, ents: list) -> list:
     return [e[2] for e in ents if offset <= e[0] < offset + len(clause) and e[0] - offset <= 60]
 
 
+def _is_blocked(left: str) -> bool:
+    clause = re.split(r"[,;:]|\s[-\u2013\u2014]\s", left)[-1]
+    return bool(RELATION_BLOCKERS & set(re.findall(r"\w+", clause.lower())[-5:]))
+
+
 def plain_sentences(text: str) -> list:
     """Sentences without Markdown scaffolding: a table cell or a bold label starts a new sentence."""
     return sentences(re.sub(r"\s*\|\s*|\*\*|^\s*(?:[-*+]|\d+[.)]|#+)\s+", ". ", text, flags=re.M))
@@ -106,6 +117,8 @@ def extract(text: str, subject: str, known_names: set) -> tuple:
         for m in VERB.finditer(sent):
             phrase = (m.group(1) or "").lower()
             rel = "flows_to" if m.group(2) else RELATIONS.get(phrase) or REVERSED_RELATIONS[phrase]
+            if _is_blocked(sent[:m.start()]):  # "no longer depends on", "might later use": not a fact about today
+                continue
             a = _subject(sent[:m.start()], ents, subject)
             for b in _objects(sent[m.end():], m.end(), ents):
                 if not a or not b or key_of(a) == key_of(b):
@@ -174,18 +187,22 @@ class Graph:
 
     def _is_named(self, key: str) -> bool:
         """Written like a name, or takes part in a stated relation: not just a capitalised ordinary word."""
-        return bool(self.out[key] or self.inc[key]) or any(
-            n.isupper() or any(ch.isdigit() or ch in "-_/" for ch in n) for n in self.names[key])
+        return self.has_links(key) or any(
+            n.isupper() or any(ch.isdigit() or ch in "-_/" for ch in n) or n.lower() in WELL_KNOWN for n in self.names[key])
 
     def walk(self, seeds: list, direction: str = "both", hops: int = 2) -> list:
-        """Typed edges reachable from the seeds: [(hop, a, rel, b, chunk)]; `in` follows what depends on a seed."""
+        """Typed edges reachable from the seeds, within two hops: [(hop, a, rel, b, chunk)]. `impact` follows what
+        stops working along with a seed, `out` what a seed needs."""
         edges, seen, queue = [], set(seeds), deque((s, 1) for s in seeds)
         while queue:
             node, hop = queue.popleft()
             if hop > hops:
                 continue
             steps = []
-            if direction in ("in", "both"):
+            if direction == "impact":
+                steps += [(other, rel, node, i, other) for rel, other, i in self.inc[node] if rel in IMPACT_THROUGH_IN]
+                steps += [(node, rel, other, i, other) for rel, other, i in self.out[node] if rel in IMPACT_THROUGH_OUT]
+            if direction == "both":
                 steps += [(other, rel, node, i, other) for rel, other, i in self.inc[node]]
             if direction in ("out", "both"):
                 steps += [(node, rel, other, i, other) for rel, other, i in self.out[node]]
@@ -195,6 +212,9 @@ class Graph:
                     seen.add(nxt)
                     queue.append((nxt, hop + 1))
         return edges
+
+    def has_links(self, key: str) -> bool:
+        return bool(self.out.get(key) or self.inc.get(key))
 
     def neighbours(self, seeds: list, limit: int = 5) -> list:
         """Fallback when nothing typed is known: chunks where the seed stands next to other entities."""
