@@ -23,6 +23,8 @@ DEFAULT_MODEL = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
 FAST_RERANK = "Xenova/ms-marco-MiniLM-L-6-v2"
 ST_RERANK = "cross-encoder/ms-marco-MiniLM-L-6-v2"
 LATE_MIN_WINDOW = 256
+# Hugging Face's Xet transfer hung forever behind a VPN in testing, with a 0-byte file and no error. Plain HTTP took 49 s.
+os.environ.setdefault("HF_HUB_DISABLE_XET", "1")
 
 
 def unit(v: list) -> list:
@@ -54,10 +56,11 @@ class HashEmbedder:
 
 
 class FastEmbedder:
-    def __init__(self, model: str):
+    def __init__(self, model: str, download: bool = True):
         from fastembed import TextEmbedding  # optional dependency
         cache = al_home() / "models"  # the default temp cache can be wiped and re-downloaded
-        self.m, self.id = TextEmbedding(model_name=model, cache_dir=str(cache)), f"fastembed:{model}"
+        kwargs = {} if download else {"local_files_only": True}
+        self.m, self.id = TextEmbedding(model_name=model, cache_dir=str(cache), **kwargs), f"fastembed:{model}"
         self.dim = len(self.embed(["probe"])[0])
         try:
             self.late_window = int(self.m.model.tokenizer.truncation["max_length"])
@@ -73,9 +76,10 @@ class FastEmbedder:
 
 
 class STEmbedder:
-    def __init__(self, model: str):
+    def __init__(self, model: str, download: bool = True):
         from sentence_transformers import SentenceTransformer  # optional dependency
-        self.m, self.id = SentenceTransformer(model), f"st:{model}"
+        kwargs = {} if download else {"local_files_only": True}
+        self.m, self.id = SentenceTransformer(model, **kwargs), f"st:{model}"
         self.dim = len(self.embed(["probe"])[0])
         self.late_window = int(getattr(self.m, "max_seq_length", 0) or 0)
 
@@ -88,13 +92,14 @@ class STEmbedder:
         return enc["offset_mapping"], vecs.cpu() if hasattr(vecs, "cpu") else vecs
 
 
-def embedder():
+def embedder(download: bool = True):
+    """The best backend available. Only commands that build the index may download: a search must not hang on one."""
     want = os.environ.get("AUTOLEARN_EMBED", "auto").lower()
     model = os.environ.get("AUTOLEARN_EMBED_MODEL", DEFAULT_MODEL)
     for name, cls in (("fastembed", FastEmbedder), ("sentence-transformers", STEmbedder)):
         if want in ("auto", name):
             try:
-                return cls(model)
+                return cls(model, download)
             except Exception as e:  # not installed, no network for the first download, bad model
                 if want == name:
                     print(f"! embedding backend {name} unavailable ({e}); using hash", file=sys.stderr)

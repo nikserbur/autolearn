@@ -40,14 +40,15 @@ and [EXPERIMENTS-TEMPLATE.tsv](EXPERIMENTS-TEMPLATE.tsv). Resuming an existing f
   Without hooks (or to force it): `python3 "${CLAUDE_SKILL_DIR}/scripts/kb_rag.py" index --root <folder>/KB`.
 - Retrieval: `python3 "${CLAUDE_SKILL_DIR}/scripts/kb_rag.py" search --root <folder>/KB "<query>"`
   routes each query by itself and returns the best sections with `path:line` within 8 KB, with a
-  verdict: `CORRECT`, `AMBIGUOUS` (it names what is missing) or `INCORRECT` (the KB does not have
-  it; go to the code, papers and the web, then record the finding). "What depends on X" walks the
+  verdict: `CORRECT`, `AMBIGUOUS` (it names what is missing) or `INCORRECT` (read the closest sections it
+  shows; if none answers, go to the code, papers and the web, then record the finding). "What depends on X" walks the
   entity graph; "what did all rounds show" draws on every document and names what recurs. The store
   holds every research KB ever indexed, so past projects answer too.
-- Embeddings: a multilingual model when `fastembed` or `sentence-transformers` is installed
-  (`pip install fastembed`, model in `$AUTOLEARN_EMBED_MODEL`; if it lives in a venv, set
-  `AUTOLEARN_PYTHON` to that python so the hook uses it too), otherwise the stdlib hashing
-  fallback. `kb_rag.py status` shows what is in use; mention it once in the first check-in.
+- Embeddings: a multilingual model once `python3 "${CLAUDE_SKILL_DIR}/scripts/kb_rag.py" setup` has run (a private
+  virtualenv, about 370 MB of downloads, so ask first; every later run moves into it by itself), otherwise the stdlib
+  hashing fallback. `kb_rag.py status` shows what is in use; mention it once in the first check-in.
+- A research KB joins every later search. `kb_rag.py forget --root <folder>/KB` takes it out when it is confidential or
+  stale. Files over 2 MB are not indexed: summarise exports, do not store them in `KB/`.
 - Retrieve (several short queries) at fixed points: before writing the program, before every
   round plan, before recording a decision ("did we see this before?"), and give the same
   command to the reviewer. Never paste whole KB files into the context.

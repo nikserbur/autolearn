@@ -8,7 +8,7 @@ A self-learning harness for Claude Code that turns escaped bugs, merge-gate find
 
 [![CI](https://github.com/nikserbur/autolearn/actions/workflows/ci.yml/badge.svg)](https://github.com/nikserbur/autolearn/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-0.3.0-informational)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.3.1-informational)](CHANGELOG.md)
 [![Claude Code plugin](https://img.shields.io/badge/Claude%20Code-plugin-D97757)](#install)
 
 </div>
@@ -263,7 +263,7 @@ flowchart TD
   OUT --> VF[verify the draft:<br/>numbers, ids, negation, citations]
 ```
 
-There is nothing to choose. `kb_rag.py search <question>` works with no packages installed and improves by itself when it finds a model. Each technique decides when it applies:
+There is nothing to choose. `kb_rag.py search <question>` works with no packages installed, and `kb_rag.py setup` adds an embedding model for all later runs (about 370 MB of downloads). Each technique decides when it applies:
 
 | Technique | Applies when | With no packages | When more is available |
 |---|---|---|---|
@@ -273,27 +273,23 @@ There is nothing to choose. `kb_rag.py search <question>` works with no packages
 | Late chunking | the model exposes token vectors and sees at least 256 tokens | off | turns itself on, for example with `BAAI/bge-small-en-v1.5` |
 | Rerank | every non-exact question | built-in: coverage, proximity, phrase and literal match | cross-encoder; an English-only one sits out on other languages |
 | GraphRAG, local | a relation question about a known entity | relations from patterns | an LLM adds relations |
-| GraphRAG, global | a question about the whole base, with 3+ documents | every document gets a voice, recurring terms, entity clusters, time filter | |
-| Corrective RAG | every result is graded; correction runs only when it is not `CORRECT` | splits compound questions, repairs inflected terms, names what is missing, sends Claude to repo docs and the web | the embedding model vouches for paraphrases |
-| Faithfulness (Self-RAG) | `verify` on a draft with numbers or ids, or built on a partial result (a `kb-router` step) | yes, exit 1 on a failure | |
+| GraphRAG, global | a question about the whole base or a period, with 3+ documents | every document gets a voice, recurring terms, entity clusters, month, quarter and year filter. Always graded as a sample, never as complete | |
+| Corrective RAG | every result is graded; correction runs only when it is not `CORRECT` | splits compound questions, repairs inflections and typos, names what is missing, shows the closest sections to read before leaving for repo docs and the web | the embedding model vouches for paraphrases |
+| Faithfulness (Self-RAG) | `verify` on a draft with numbers or ids, or built on a partial result (a `kb-router` step) | numbers with units, ids, names, negation, citations; exit 1 on a failure | |
 | Streaming / CDC | every write (hook), every search, `watch`, `events` | re-embeds changed chunks only, journals each change | |
 
-Measured against the previous engine with [`scripts/rag_eval.py`](scripts/rag_eval.py), on 24 questions about this repo's real docs, then on questions built for each technique:
+| Independent set: 106 questions on notes the author had not seen | v0.2.3 | v0.3.0 | v0.3.1 |
+|---|---:|---:|---:|
+| 71 with one answer, no packages: top-1 / top-3 | 44 / 49 | 36 / 41 | 40 / 41, or 49 / 55 counting weak candidates |
+| The same, MiniLM: top-1 / top-3 | 45 / 57 | 48 / 55 | 49 / 55, or 50 / 57 counting weak candidates |
+| 84 answerable, graded `INCORRECT`: no packages / MiniLM | | 31 / 7 | 29 / 4 |
+| `CORRECT` without the answer in the section: no packages / MiniLM | | 1 / 1 | 0 / 0 |
+| 22 with no answer in the base, `INCORRECT`: no packages / MiniLM | 2 / 2 | 17 / 12 | 18 / 12 |
+| Of those 22, graded `CORRECT`: no packages / MiniLM | | 1 / 1 | 0 / 0 |
+| 8 multi-hop, documents found: no packages / MiniLM | 0.75 / 0.85 | 0.48 / 0.73 | 0.83 / 0.88 |
+| 5 about the whole base, documents found: no packages / MiniLM | 0.19 / 0.19 | 0.40 / 0.35 | 0.36 / 0.35 |
 
-| Top-1 / top-3 / MRR, 24 real questions | v0.2.3 | v0.3.0 |
-|---|---:|---:|
-| No packages | 0.79 / 0.92 / 0.87 | 0.83 / 1.00 / 0.91 |
-| `fastembed` with the default multilingual MiniLM | 0.50 / 0.71 / 0.63 | 0.79 / 1.00 / 0.89 |
-| The same plus its cross-encoder | | 0.88 / 0.96 / 0.92 |
-
-| Other checks, with and without the model | v0.2.3 | v0.3.0 |
-|---|---:|---:|
-| 9 questions with no answer in the base: refused | 3 | 9 |
-| 3 multi-hop questions: documents found | 0.72 | 1.00 |
-| 2 whole-base questions: documents found | 0.70 to 0.80 | 1.00 |
-| 5 Russian questions on English docs, MiniLM: in the top 3 | 3 | 2 |
-
-The last row is a regression: child chunks carry less topic than whole sections when no word can match. So the engine tells Claude to ask again in the language of the notes; asked in English, 4 of the 5 are found. Late chunking on `bge-small-en-v1.5` moved MRR from 0.91 to 0.93 and lost one refusal, which is no clear win on a set this small. These sets are small, the targeted corpus was written to exercise these techniques, and the thresholds were set looking at them, so read this as a regression floor rather than a promise. More in [docs/knowledge-router.md](docs/knowledge-router.md).
+That set comes from a fresh session asked to break v0.3.0. It reversed the author's own claims: without packages the release found less than the engine before it, and it answered made-up ids and nonsense with `CORRECT`. v0.3.1 fixes what it found and takes its tests as acceptance tests, but the fixes were tuned on that same set, so it is no longer blind. What is left is plain in the table: without a model a third of answerable questions are graded `INCORRECT`, though the closest sections are shown for Claude to read; a question about the whole base finds well under half of the relevant documents, so its answer is always labelled a sample. On 24 questions about this repo's docs (top-1 / top-3 / MRR): no packages 0.83 / 1.00 / 0.91, MiniLM 0.79 / 1.00 / 0.89, MiniLM plus cross-encoder 0.88 / 0.92 / 0.92. Run [`scripts/rag_eval.py`](scripts/rag_eval.py) on your own notes before you rely on these. More in [docs/knowledge-router.md](docs/knowledge-router.md).
 
 `kb-ingest` never writes a page without a router entry, and `kb_lint.py` fails on any page the router cannot reach. Every page, and every research `KB/` folder, is indexed for retrieval.
 
@@ -367,13 +363,16 @@ See [SECURITY.md](SECURITY.md) and [docs/hooks.md](docs/hooks.md).
 
 ## Status and limitations
 
-- **v0.3.0.** The hooks and scripts are covered by tests; the agent prompts come from daily use but have not been measured on a benchmark yet.
+- **v0.3.1.** The hooks and scripts are covered by tests; the agent prompts come from daily use but have not been measured on a benchmark yet.
 - **Claude Code only.** There are no adapters for Codex, Cursor or other hosts.
 - **Feedback capture is regex-based.** It recognises common phrasings in 15 languages and misses paraphrases; `/learn` also reads the corrections in the current conversation.
-- **Retrieval is strongest with an embedding model.** Without one (`pip install fastembed`) search is lexical plus hashed vectors: paraphrases are often missed and a question in another language than the notes finds nothing (0 of 5 in the benchmark). With one, such a question is still weak (2 of 5 in the top 3), so the output asks Claude to repeat it in the language of the notes.
-- **Verified on real models:** `fastembed` with two embedding models and a cross-encoder. Checked against stand-ins that follow their APIs: `sentence-transformers`, Ollama and `AUTOLEARN_LLM=claude`.
+- **Retrieval is strongest with an embedding model.** Without one (`kb_rag.py setup`) search is lexical plus hashed vectors: paraphrases are often missed and a question in another language than the notes finds nothing (0 of 5 in the benchmark). With one, such a question is still weak (2 of 5 in the top 3), so the output asks Claude to repeat it in the language of the notes. A search with a model takes 1-3 s and about 1 GB of memory on 10,000 chunks.
+- **Questions about the whole base are a sample.** They find well under half of the relevant documents, and the answer says so.
+- **Verified on real models:** `kb_rag.py setup` and `fastembed` with two embedding models and a cross-encoder. Checked only against stand-ins that follow their APIs: `sentence-transformers`, Ollama and `AUTOLEARN_LLM=claude`. Real people's notes have not been measured.
 - **The graph reads stated relations.** Without an LLM, entities and relations come from patterns in English and Russian ([add a language](skills/research/scripts/ragkit/lang.json)), so it follows "X depends on Y", not relations left implied.
-- **`verify` is a lexical check.** It catches wrong numbers and ids, flipped negation, bad citations and claims the base does not hold; it will not catch a subtle misreading.
+- **Verdicts are heuristics.** `CORRECT` means the question's words stand together in the section, not that the section answers it. Claude still reads what it cites.
+- **`verify` is a lexical check.** It catches wrong numbers and units, unknown ids and names, bad citations and claims the base does not hold. It misses what a sentence only implies and decisions superseded in another note, and it raises false alarms across languages and on paraphrases.
+- **Every indexed folder joins every later search.** `kb_rag.py forget --root DIR` takes one out. Files over 2 MB are skipped.
 - **No connectors are bundled.** `kb_rag.py events` takes changes from Confluence, Notion or anything else as JSON lines, but something has to send them.
 - **Plugin-mode gates rely on `agent_type`** in the hook input; the install script does not.
 
@@ -385,7 +384,7 @@ The multi-agent plan -> review pipeline is common ground: superpowers, compound-
 
 <details>
 <summary><b>Does it need any Python packages?</b></summary>
-No. Hooks and scripts use the Python 3.9+ standard library only. Tests run with <code>python3 -m unittest</code>. If <code>fastembed</code> or <code>sentence-transformers</code> is installed, retrieval picks up real embeddings and a cross-encoder by itself.
+No. Hooks and scripts use the Python 3.9+ standard library only. Tests run with <code>python3 -m unittest</code>. If <code>fastembed</code> or <code>sentence-transformers</code> is installed, or after <code>kb_rag.py setup</code>, retrieval uses real embeddings and a cross-encoder by itself.
 </details>
 
 <details>

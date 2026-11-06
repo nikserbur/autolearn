@@ -6,6 +6,40 @@ All notable changes to this project are documented here. The format follows
 and `.claude-plugin/marketplace.json` together with every release, or plugin users will not
 receive the update.
 
+## [0.3.1] - 2026-11-06
+
+A fresh session asked to break v0.3.0 found that its numbers did not hold on notes the author had not seen: without
+packages it found less than v0.2.3, and it graded made-up ids and nonsense `CORRECT`. Measurements are in the README.
+
+### Fixed
+- Graph verdicts were hard-coded: any stated link made `CORRECT`. What else a question asks must now be in the evidence.
+- Negated and planned statements (`no longer depends on`, `might later use`) became graph edges, the opposite of the note.
+- Ids that do not exist were graded `CORRECT` on their parts. `pg-orders-3`, `KES-2291`, `v0.3.0` and `1.8` are now one term.
+- Whole-base answers were graded on one matching word and ignored a stated period with no data. They are now always a
+  sample, refuse a topic or period the base does not have, and tell a month from its quarter.
+- Routing matched substrings, so ordinary questions left the local route. Signals now match words, and `how do I connect
+  to X` is not a relation question. Questions about a period reach whole-base search without `all` or `every`.
+- `verify` accepted false claims: it checks one place in the notes rather than a whole section, numbers with their units,
+  names, ids, and names the notes turn down.
+- `pip install fastembed` failed under PEP 668, and a model in a virtualenv went unused because skills call `python3`.
+  `kb_rag.py setup` now installs one privately and every later run moves into its python.
+- A file of any size was indexed: one 8 MB export cost every later search 10 s. Files over 2 MB are skipped and reported.
+- A note could pass for a line of the report. Each line it contributes now starts with `| `.
+- The first search could block on a model download or a full rebuild. Searches never download, rebuilds run in the
+  background, and Hugging Face's Xet transfer, which hung behind a VPN, is off by default.
+- `events`: a line separator inside a document rejected it, and deep JSON crashed the batch.
+- A damaged `meta.json` crashed every command, a dead or hung lock blocked indexing for an hour, and `index` reported
+  success when it could not update the store.
+- Upgrading left the index tracked in the data directory's git, and rolling back to v0.2 crashed on the new store.
+- Notes in a legacy encoding could not be found, questions in Russian on a base full of numbers were told the notes were
+  in another language, `# comments` in code fences broke `kb_route.py`, a line break in a query could forge a log line.
+
+### Added
+- `INCORRECT` now shows the two closest sections under a `~==` marker, to read before leaving for the web.
+- `kb_rag.py forget --root DIR` takes a folder out of later searches, and `status` lists them.
+- Lower-case well-known names (`redis`, `kafka`) are entities. Pages about an entity a walk reached come with the answer.
+- `tests/test_rag_trust.py`: the independent session's tests, kept as acceptance tests, with the rest of its findings.
+
 ## [0.3.0] - 2026-11-04
 
 ### Added

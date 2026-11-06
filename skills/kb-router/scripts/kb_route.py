@@ -62,8 +62,13 @@ def section_range(path: pathlib.Path, anchor: str):
     lines = path.read_text(encoding="utf-8").splitlines()
     if not anchor:
         return 1, len(lines), sum(len(l) + 1 for l in lines)
-    heads = [(i, len(m.group(1)), slug(m.group(2))) for i, l in enumerate(lines)
-             for m in [re.match(r"^(#{1,6})\s+(.*)", l)] if m]
+    heads, fence = [], False
+    for i, line in enumerate(lines):
+        if line.lstrip().startswith("```"):
+            fence = not fence
+        m = None if fence else re.match(r"^(#{1,6})\s+(.*)", line)
+        if m:
+            heads.append((i, len(m.group(1)), slug(m.group(2))))
     want = slug(anchor)
     for k, (i, level, s) in enumerate(heads):
         if s == want or want in s:

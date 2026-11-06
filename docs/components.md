@@ -53,7 +53,7 @@ Design notes: [pipeline](pipeline.md), [learning loop](learning-loop.md), [knowl
 
 | Script | Used by | Does |
 |---|---|---|
-| `skills/research/scripts/kb_rag.py` + `ragkit/` | research, kb-router, kb-ingest, kb_autoindex hook | Self-routing RAG: parent-child chunks, contextual retrieval, embeddings (fastembed / sentence-transformers, or stdlib hashing), late chunking, entity graph, incremental updates with a change journal; search routes each query, fuses vector, BM25 and graph rankings, reranks, grades (CRAG) and logs hit/miss; `verify` checks a draft against the base; `events` and `watch` take outside changes |
+| `skills/research/scripts/kb_rag.py` + `ragkit/` | research, kb-router, kb-ingest, kb_autoindex hook | Self-routing RAG: parent-child chunks, contextual retrieval, embeddings (fastembed / sentence-transformers, or stdlib hashing), late chunking, entity graph, incremental updates with a change journal; search routes each query, fuses vector, BM25 and graph rankings, reranks, grades (CRAG) and logs hit/miss; `verify` checks a draft against the base; `events` and `watch` take outside changes; `forget` drops a folder; `setup` installs a model into a private virtualenv |
 | `skills/kb-router/scripts/kb_route.py` | kb-router | Ranks topic blocks, resolves `file#section` to line ranges with sizes, prints budgeted `sed` commands, logs hit/miss |
 | `skills/kb-ingest/scripts/kb_lint.py` | kb-ingest | Broken pointers, unroutable pages, size budgets |
 | `skills/learn/scripts/lessons.py` | learn, feature, merge-check | Inbox, cursor, proposals, extra-reviewer matching against a patch, run stats with tuning hints |

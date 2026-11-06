@@ -48,7 +48,7 @@ configured per query: each technique below decides when it applies.
    lead sentence. With an LLM (`AUTOLEARN_LLM`) a sentence written for that chunk replaces this, in
    the background, at most 60 chunks per run; the result is cached by the chunk's content.
 3. **Embeddings.** A multilingual sentence model through `fastembed` or `sentence-transformers`
-   (`$AUTOLEARN_EMBED`, `$AUTOLEARN_EMBED_MODEL`), otherwise stdlib signed hashing of stems and
+   (`kb_rag.py setup`, `$AUTOLEARN_EMBED`, `$AUTOLEARN_EMBED_MODEL`), otherwise stdlib signed hashing of stems and
    character trigrams. Changing the backend rebuilds the store and keeps its roots.
 4. **Late chunking.** When the model exposes token vectors and sees at least 256 tokens at once,
    the whole document goes through it (in windows overlapping by a quarter if it is longer), and
@@ -85,41 +85,65 @@ the events.
 
 | Route | When | What it adds |
 |---|---|---|
-| `exact` | the query is mostly identifiers | BM25 first; neither a reranker nor a paraphrase can outvote `E99` |
+| `exact` | the query is mostly identifiers | BM25 first. `pg-orders-3`, `INC-2291`, `v0.3.0` and `1.8` are one term each, so a near twin does not answer; the document named after an id comes before those that mention it |
 | `local` | a specific question | hybrid search plus reranking |
-| `graph` | relation words and a named entity the graph knows | walks typed edges into the fusion; "what breaks" follows dependents, "what does it depend on" the other way, two entities the path between them |
-| `global` | a question about the whole base and 3+ documents | every document with evidence gets a voice (round robin), a stated period filters them, and the answer opens with what recurs across documents and which entity clusters they share |
+| `graph` | relation words (word by word, not substrings) and a named entity with stated relations; `between` needs two | walks typed edges into the fusion, up to two hops; "what breaks" follows what stops working along with it, "what does it depend on" the other way, two entities the path between them |
+| `global` | the whole base (`across all teams`), or `overall`, `summary` and period questions when no specific entity is named, with 3+ documents | every document with evidence gets a voice, a stated month, quarter or year filters them, and the answer opens with what recurs across documents |
 
 The route, its reason and the verdict open every answer. `--mode` overrides the route.
 
 1. **Fusion.** Reciprocal rank fusion of the child vector, section vector (models only), child BM25, section
-   BM25 and (when routed) graph rankings. BM25 searches children together with their contextual prefix, at half weight; identifiers
-   are never cut by the stemmer.
+   BM25 and (when routed) graph rankings. BM25 searches children together with their contextual prefix, at half weight.
 2. **Rerank.** A cross-encoder when one is installed and cached: the background `index` fetches it
    and a search never waits for a download (`$AUTOLEARN_RERANK`, `$AUTOLEARN_RERANK_MODEL`). An
    English-only model sits out on questions and sections in other languages, and it reads the matched chunk: on
    whole sections the same model did worse than no cross-encoder. The built-in reranker always runs and weighs coverage
-   near the match, proximity, phrase, literal word form, headings, fusion and cosine. Its weights came
-   from a coarse grid on half of the golden questions and were checked on the other half. Sections far
+   near the match, proximity, phrase, literal word form, headings, fusion and cosine. Sections far
    below the best score become pointers.
-3. **CRAG.** The best section is graded by the share of the query's information it holds, weighted by
-   rarity, so a term the base never saw counts most. An embedding model can vouch for a paraphrase, unless
-   terms the base never saw hold half of the query: near any machine-learning note is not an answer about
-   gradient boosting. Across alphabets a close vector is all there is, so the verdict stays `AMBIGUOUS`.
+3. **CRAG.** The best section is graded by the share of the query's information it holds near the match, weighted by
+   rarity, so a term the base never saw counts most, and a word found only in a chunk's context counts for less. The
+   rarest word must be there for `CORRECT`. An embedding model can vouch for a paraphrase, unless terms the base never
+   saw hold half of the query, and never alone: some words of the question have to be there too. Across alphabets a
+   close vector is all there is, so the verdict stays `AMBIGUOUS` and asks for the question in the notes' language.
 
 | Verdict | Means | What happens |
 |---|---|---|
-| `CORRECT` | the base answers | sections are shown; the log says `hit` |
-| `AMBIGUOUS` | partly | sections are shown with what was not found; the log says `partial`; Claude rephrases once and fills the gap from other sources |
-| `INCORRECT` | it does not | no section is presented as an answer, weak candidates stay as pointers; the log says `miss`; Claude goes to repo docs, doc tools and the web, then writes the finding into the KB |
+| `CORRECT` | the question's words stand together in the section | shown under `===`; the log says `hit` |
+| `AMBIGUOUS` | partly, or a sample of the whole base, or links without the rest of the question | shown under `===` with what was not found; the log says `partial`; Claude rephrases once and fills the gap from other sources |
+| `INCORRECT` | nothing was graded an answer | the two closest sections are shown under `~==`, so that whoever parses the output does not count them; the log says `miss`; Claude reads them before leaving for repo docs, doc tools and the web, then writes the finding into the KB |
 
    Before that verdict stands, one correction runs inside the base: a compound question is split so
-   that the unanswered part can be named, and terms the base never saw are repaired to a vocabulary
-   term with the same start. The scripts make no web requests themselves: `kb-router` tells Claude to.
-4. **Faithfulness (Self-RAG).** `kb_rag.py verify` takes a draft from `--answer`, `--file` or stdin and
-   looks up each claim on its own. Numbers and identifiers must appear in the evidence, negation must
-   agree, cited `path:line` pointers must exist. Exit 1 when any claim is unsupported or the score is
-   below 0.8, with the evidence named. It is lexical: it will not catch a subtle misreading.
+   that the unanswered part can be named, and terms the base never saw are repaired to the closest vocabulary term, which
+   covers inflections and typos. The scripts make no web requests themselves: `kb-router` tells Claude to.
+4. **Graph evidence.** A stated link answers a question about links, and only that. Whatever else the question asks must
+   be in the evidence too, or the verdict is `AMBIGUOUS` and names it. Negated and planned statements (`no longer depends
+   on`, `might later use`) do not become edges. Two entities without a stated path are reported as such.
+5. **Whole base.** `global` is never `CORRECT`: it shows a sample, and nothing here can prove it complete. It refuses when the
+   base never mentions the topic or the stated period instead of showing something else.
+6. **Faithfulness (Self-RAG).** `kb_rag.py verify` takes a draft from `--answer`, `--file` or stdin and looks up each claim
+   on its own, held to one place in the notes: a line, or two side by side. Numbers with their units (`15 minutes`
+   against `15 hours`) and identifiers must be there, names must stand where the rest of the claim is, negation must
+   agree, a name the notes turn down (`over MySQL`) does not count, and cited `path:line` pointers must exist. Exit 1 when
+   any claim is unsupported or the score is below 0.8. It is lexical: it misses what a sentence only implies, and raises
+   false alarms across languages and on paraphrases. Read the evidence it names.
+
+Lines starting with `| ` in the output quote the notes, so that a note cannot pass for a line of the report.
+
+### An embedding model
+
+`kb_rag.py setup` builds a virtualenv in the data directory, installs `fastembed` (system pythons refuse `pip install`
+under PEP 668), downloads the model and remembers that python. Every later run moves into it on start, whichever python
+called the script, so skills and the hook need no changes. `AUTOLEARN_PYTHON` names another interpreter. Without the
+model's python a store built with it is searched by words only and new notes stay out until it runs: `kb_rag.py index`
+then exits 1 and says which python to use. A search never downloads a model, and never waits for a rebuild with
+one: that runs in the background while the last snapshot answers by words.
+
+### Limits and upkeep
+
+Files over 2 MB are not indexed (`AUTOLEARN_MAX_FILE_MB`), and searches and `status` say so. Notes that are not UTF-8 are
+read as a legacy encoding, and `status` lists them. A store that cannot be read is rebuilt. A lock is taken over when its
+process is gone or it has been quiet for ten minutes. A folder indexed once stays in every later search until
+`kb_rag.py forget --root DIR`. Upgrading adds the index to the data directory's `.gitignore` and stops tracking it.
 
 ### Optional LLM
 
@@ -132,43 +156,44 @@ text and graph edges.
 
 ### Measured
 
-`scripts/rag_eval.py` runs any engine version against a golden set, on a private copy of the corpus. These
-are the previous engine and this one on `tests/fixtures/rag/golden_repo.tsv` (this repo's docs at commit
-`4a32ca7`) and `golden_fixture.tsv` (a corpus written to exercise each technique).
+`scripts/rag_eval.py` runs any engine version against a golden set, on a private copy of the corpus. The first
+table is from a fresh session asked to break v0.3.0, with questions frozen before it read the engine. v0.3.1 was then
+tuned on those same questions, so its column shows that the found failures are gone, not how it does on notes it has not
+seen. Counts of "top-1" under v0.3.1 with no packages show sections graded as answers first, then with the weak
+candidates that are shown alongside them, because Claude reads both.
 
-| 24 questions on real docs: top-1 / top-3 / MRR | v0.2.3 | v0.3.0 |
+| Independent set: 106 questions on notes the author had not seen | v0.2.3 | v0.3.0 | v0.3.1 |
+|---|---:|---:|---:|
+| 71 with one answer, no packages: top-1 / top-3 | 44 / 49 | 36 / 41 | 40 / 41, or 49 / 55 counting weak candidates |
+| The same, MiniLM: top-1 / top-3 | 45 / 57 | 48 / 55 | 49 / 55, or 50 / 57 counting weak candidates |
+| 84 answerable, graded `INCORRECT`: no packages / MiniLM | | 31 / 7 | 29 / 4 |
+| `CORRECT` without the answer in the section: no packages / MiniLM | | 1 / 1 | 0 / 0 |
+| 22 with no answer in the base, `INCORRECT`: no packages / MiniLM | 2 / 2 | 17 / 12 | 18 / 12 |
+| Of those 22, graded `CORRECT`: no packages / MiniLM | | 1 / 1 | 0 / 0 |
+| 8 multi-hop, documents found: no packages / MiniLM | 0.75 / 0.85 | 0.48 / 0.73 | 0.83 / 0.88 |
+| 5 about the whole base, documents found: no packages / MiniLM | 0.19 / 0.19 | 0.40 / 0.35 | 0.36 / 0.35 |
+
+| 24 questions on this repo's docs at commit `4a32ca7`: top-1 / top-3 / MRR | v0.2.3 | v0.3.1 |
 |---|---:|---:|
-| Standard library only | 0.79 / 0.92 / 0.87 | 0.83 / 1.00 / 0.91 |
-| `fastembed`, multilingual MiniLM (no late chunking: 128-token window) | 0.50 / 0.71 / 0.63 | 0.79 / 1.00 / 0.89 |
-| The same plus `ms-marco-MiniLM-L-6-v2` | | 0.88 / 0.96 / 0.92 |
-| `fastembed`, `bge-small-en-v1.5`, late chunking off | | 0.88 / 0.96 / 0.91 |
-| The same, late chunking on | | 0.88 / 1.00 / 0.93 |
+| No packages | 0.79 / 0.92 / 0.87 | 0.83 / 1.00 / 0.91 |
+| `fastembed`, multilingual MiniLM | 0.50 / 0.71 / 0.63 | 0.79 / 1.00 / 0.89 |
+| The same plus `ms-marco-MiniLM-L-6-v2` | | 0.88 / 0.92 / 0.92 |
 
-| Other checks | v0.2.3 | v0.3.0 |
-|---|---:|---:|
-| 9 questions with no answer: refused, standard library | 3 | 9 |
-| The same, MiniLM | 3 | 9 |
-| The same, `bge-small-en-v1.5` with late chunking | | 7 |
-| 11 targeted questions: top-1, standard library | 0.73 | 0.91 |
-| The same, MiniLM | 0.91 | 1.00 |
-| 3 multi-hop questions: documents found, either backend | 0.72 | 1.00 |
-| 2 whole-base questions: documents found, standard library / MiniLM | 0.80 / 0.70 | 1.00 / 1.00 |
-| 5 Russian questions on English docs: in the top 3, MiniLM | 3 | 2 |
+- **The cross-encoder is not a clear win.** On the independent set it scored 49 / 55 against 50 / 57 without it, weak
+  candidates counted in both, and it
+  raised false refusals from 4 to 7. It helped on this repo's English docs. `AUTOLEARN_RERANK=off` turns it off.
+- **Late chunking is not a clear win either.** On `bge-small-en-v1.5` it made no measurable difference on the independent
+  set and cost about twice the CPU. With the default MiniLM it stays off.
+- **`bge-small-en-v1.5` refuses less** (10 of 22): the noise floor brings its cosines closer to MiniLM's, not level with them.
+- **`verify`** on 45 claims written for that check, standard library: it catches 23 of 26 false ones and accepts 14 of 19
+  true ones. The misses are a sentence that only implies the opposite; the false alarms are mostly across languages.
+- **Russian questions on English docs** stay weak under MiniLM (2 of 5 in the top 3, 3 under v0.2.3). The verdict is capped
+  at `AMBIGUOUS` and the output asks Claude to repeat the question in the language of the notes; asked in English, 4 of the
+  5 are found.
 
-The last row is the one place this engine is worse: small chunks carry less topic than whole sections when no
-word can match. The verdict is capped at `AMBIGUOUS` there and the output asks Claude to repeat the question in
-the language of the notes; asked in English, 4 of the 5 are found.
-
-How much a cosine means depends on the model: everyday questions reach 0.25 on this corpus under MiniLM and 0.57
-under `bge-small`. So each store measures that noise floor on neutral probes (`lang.json`) and the verdict reads
-how far a cosine stands above it, as a share of the room up to 1. With that, MiniLM refuses all 9 and `bge-small`
-7, so treat a new model's verdicts with care until it has been measured.
-
-The sets are small, and the weights and thresholds were set looking at them (the reranker's on half of the
-real-docs questions, which did no better than the held-out half). They work as a regression floor, which
-`tests/test_rag_search.py` enforces, rather than as a general claim. Verified on real models: `fastembed` with
-two embedding models and a cross-encoder. Checked against stand-ins that follow their APIs:
-`sentence-transformers`, Ollama and `AUTOLEARN_LLM=claude`.
+Verified on real models: `kb_rag.py setup` and `fastembed` with two embedding models and a cross-encoder. Checked against
+stand-ins only: `sentence-transformers`, Ollama and `AUTOLEARN_LLM=claude`. The tests run on macOS and Linux; Windows has not
+been run. Real people's notes have not been measured: use `scripts/rag_eval.py` on your own.
 
 ## Routing
 

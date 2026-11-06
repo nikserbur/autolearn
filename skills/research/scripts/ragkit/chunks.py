@@ -170,6 +170,7 @@ def parse_file(path: pathlib.Path, text: str) -> dict:
     is_tsv = path.suffix == ".tsv"
     title, summary = (re.sub(r"[-_]+", " ", path.stem), "") if is_tsv else doc_info(path, lines)
     name = re.sub(r"[-_]+", " ", path.stem)
+    folder = re.sub(r"[-_]+", " ", path.parent.name)
     offsets, pos = [], 0
     for line in lines:
         offsets.append(pos)
@@ -183,11 +184,11 @@ def parse_file(path: pathlib.Path, text: str) -> dict:
         sents = sentences("\n".join(k[4] for k in kids[:1]))
         lead = sents[0][:100] if sents else ""
         own = periods(f"{head} {body}")
-        tags = own | {t for t in doc_tags if t[0] not in {o[0] for o in own}}
+        tags = own | doc_tags  # a section of the August post-mortem is from August, whatever else it mentions
         children = []
         for n, (a, b, ca, cb, kid) in enumerate(kids):
             children.append({"s": a + 1, "e": b + 1, "cs": offsets[a] + ca, "ce": offsets[b] + cb, "text": kid,
                              "ctx": context_of(title, summary, head, lead if n else "", name)})
         parents.append({"s": s, "e": e, "head": head, "htok": tokens(head), "sha": digest("\n".join(lines[s - 1:e])),
-                        "ctok": tokens(f"{title} {name} {summary} {lead}"), "per": sorted(tags), "kids": children})
+                        "ctok": tokens(f"{title} {path.stem} {folder} {name} {summary} {lead}"), "per": sorted(tags), "kids": children})
     return {"title": title, "summary": summary, "text": "\n".join(lines), "parents": parents}

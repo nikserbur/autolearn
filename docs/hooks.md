@@ -45,7 +45,8 @@ commands when you approve a plan.
 | `AUTOLEARN_CAPTURE` | `1` | `capture_feedback.py` (`0` disables) |
 | `AUTOLEARN_PLANNER_DENY` | empty | `planner_guard.py`: extra regex of denied commands |
 | `AUTOLEARN_PLANNER_MAX_RUNS` | `3` | `planner_guard.py` |
-| `AUTOLEARN_PYTHON` | this python | `kb_autoindex.py`: the interpreter that has the embedding model |
+| `AUTOLEARN_PYTHON` | the python from `kb_rag.py setup`, else this one | `kb_rag.py` moves into it on start, so a skill's `python3` and the hook agree |
+| `AUTOLEARN_MAX_FILE_MB` | `2` | `kb_rag.py`: larger files are not indexed and are reported |
 | `AUTOLEARN_AUTOINDEX` | `1` | `kb_autoindex.py` (`0` disables, `sync` waits) |
 | `AUTOLEARN_EMBED`, `AUTOLEARN_EMBED_MODEL` | `auto`, multilingual MiniLM | `kb_rag.py`: `fastembed`, `sentence-transformers` or `hash` |
 | `AUTOLEARN_RERANK`, `AUTOLEARN_RERANK_MODEL` | `auto`, small English model | `kb_rag.py`: cross-encoder, `off` for the built-in reranker only |

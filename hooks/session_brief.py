@@ -50,13 +50,13 @@ def embeddings_missing(h: pathlib.Path) -> bool:
         backend = ""
     if backend:
         return backend.startswith("hash")
-    if os.environ.get("AUTOLEARN_PYTHON") or os.environ.get("AUTOLEARN_EMBED", "auto") == "hash":
+    if os.environ.get("AUTOLEARN_PYTHON") or (h / "model-python").exists() or os.environ.get("AUTOLEARN_EMBED", "auto") == "hash":
         return False
     return not any(importlib.util.find_spec(m) for m in ("fastembed", "sentence_transformers"))
 
 
 EMBED_HINT = ("RAG has no embedding model (stdlib hashing: weaker, no cross-language search) - offer once "
-              "to install one: `pip install fastembed` (in a venv: also set AUTOLEARN_PYTHON to it); "
+              "to install one: `kb_rag.py setup` from the research skill (a private venv, about 370 MB of downloads); "
               "the next kb_rag.py search rebuilds the store.")
 
 
@@ -97,10 +97,12 @@ def main() -> int:
     payload = read_payload()
     h = home()
     if "--seed" in sys.argv:
-        from _seed import FILES, seed  # idempotent; never overwrites
+        from _seed import FILES, ensure_ignored, seed  # idempotent; never overwrites
         first = not (h / "lessons" / "pipeline.md").exists()
         if first or any(not (h / dst).exists() for dst in FILES):
             seed(h, pathlib.Path(sys.argv[sys.argv.index("--seed") + 1]))
+        else:
+            ensure_ignored(h)
     if "--seed" in sys.argv and first:
         return emit({"hookSpecificOutput": {
             "hookEventName": "SessionStart",

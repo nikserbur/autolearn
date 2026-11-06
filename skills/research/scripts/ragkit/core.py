@@ -8,7 +8,7 @@ import re
 
 from .lang import FOLD, MONTHS, QUARTER_ORDINALS, QUARTER_PATTERNS, STOP, UPPER
 
-SCHEMA = 2  # bump when the store layout or tokenisation changes: stores rebuild themselves
+SCHEMA = 3  # bump when the store layout or tokenisation changes: stores rebuild themselves
 BUDGET = 8000
 PARENT_MAX = 1800  # a parent is what the reader gets: a heading section, long ones cut at paragraphs
 CHILD_MAX = 480  # a child is what gets searched: about the 128-token window of MiniLM models
@@ -19,6 +19,12 @@ HASH_DIM = 512
 STEM = 5  # stem length: 5 measured best on mixed Russian / English notes (6 splits endings)
 SKIP_DIRS = {".git", ".rag", "__pycache__"}
 SUFFIXES = (".md", ".tsv", ".txt")
+MAX_FILE_BYTES = 2_000_000  # a dump this size would cost every later search far more than it could ever give back
+# Identifiers that must stay one term: pg-orders-3, INC-2291, v0.3.0, orders.created, kb_rag.py. Without this a query
+# for pg-orders-3 matches pg-orders-1 on its parts, KES-2291 matches INC-2291 on its number, and 1.9 matches 1.8.
+ID_RE = re.compile(r"(?<![\w.])[^\W\d_]\w*(?:[-.]\w+)*[-.]\w*\d\w*(?:[-.]\w+)*"
+                   r"|(?<![\w.-])[^\W\d_]\w*(?:\.[^\W\d_]\w*)+(?![\w-])"
+                   r"|(?<![\w.-])\d+\.\d+(?![\w.-])")
 PERIOD_RE = re.compile("|".join([
     r"\bq[1-4]\b", r"\b[1-4]q\b", r"\b20\d\d-(?:0[1-9]|1[0-2])(?:-\d\d)?\b", r"\b20\d\d\b", *QUARTER_PATTERNS]))
 
@@ -49,7 +55,11 @@ def words(text: str) -> list:
 
 
 def is_identifier(word: str) -> bool:
-    return "_" in word or any(ch.isdigit() for ch in word)
+    return "_" in word or "." in word or any(ch.isdigit() for ch in word)
+
+
+def compound_ids(text: str) -> list:
+    return [m.group(0) for m in ID_RE.finditer(normalize(text)) if len(m.group(0)) >= 4 or m.group(0)[0].isdigit()]
 
 
 def stem(word: str) -> str:
@@ -58,22 +68,57 @@ def stem(word: str) -> str:
 
 
 def tokens(text: str) -> list:
-    return [stem(w) for w in words(text)]
+    return [stem(w) for w in words(text)] + compound_ids(text)
 
 
 def digest(text: str) -> str:
     return hashlib.sha1(text.encode("utf-8", "ignore")).hexdigest()[:12]
 
 
+def is_utf8(raw: bytes) -> bool:
+    try:
+        raw.decode("utf-8")
+        return True
+    except UnicodeDecodeError:
+        return False
+
+
 def read_text(path) -> str:
-    """Text of a note. A BOM is not content; bytes that are not UTF-8 become U+FFFD, so that a caller can tell."""
-    return pathlib.Path(path).read_bytes().decode("utf-8-sig", errors="replace")
+    """Text of a note. A BOM is not content. Older notes are often not UTF-8: runs of high bytes are a Cyrillic
+    codepage, stray ones Latin-1, so that such a note can still be searched."""
+    raw = pathlib.Path(path).read_bytes()
+    if is_utf8(raw):
+        return raw.decode("utf-8-sig")
+    return raw.decode("cp1251" if re.search(rb"[\xc0-\xff]{3}", raw) else "latin-1", errors="replace")
 
 
 def split_lines(text: str) -> list:
     """Lines as an editor and `grep -n` count them: str.splitlines also splits on form feeds and U+2028."""
     lines = re.split(r"\r\n|\r|\n", text)
     return lines[:-1] if lines and not lines[-1] else lines
+
+
+def read_section(path: str, parent: dict) -> str:
+    """The section as it was indexed, or "" if the file moved on since then: line numbers from an older index
+    would otherwise show the wrong text under a confident verdict."""
+    try:
+        lines = split_lines(read_text(path))
+    except OSError:
+        return ""
+    text = "\n".join(lines[parent["s"] - 1:parent["e"]])
+    if parent.get("sha") and digest(text) != parent["sha"]:
+        return ""
+    if path.endswith(".tsv") and parent["s"] > 1:
+        return lines[0] + "\n" + text
+    return text
+
+
+def matched_text(path: str, parent: dict, child: dict) -> str:
+    """The child's lines within its section; a journal row is one whole."""
+    text = read_section(path, parent)
+    if path.endswith(".tsv"):
+        return text
+    return "\n".join(split_lines(text)[child["s"] - parent["s"]:child["e"] - parent["s"] + 1])
 
 
 def sentences(text: str) -> list:
@@ -84,14 +129,15 @@ def sentences(text: str) -> list:
 
 
 def periods(text: str) -> set:
-    """Time tags a text speaks about: {'q3', 'y2026'} from 'Q3 2026', 'third quarter', '2026-08-14', 'July'."""
-    low, tags = normalize(text), set()
+    """Time tags a text speaks about: {'q3', 'y2026'} from 'Q3 2026', 'third quarter', and with 'm08' from '2026-08-14'
+    or 'August'. Identifiers are not dates: PN-2025-0814 speaks about no year."""
+    low, tags = ID_RE.sub(" ", normalize(text)), set()
     for m in PERIOD_RE.finditer(low):
         got = m.group(0)
         if re.fullmatch(r"20\d\d", got):
             tags.add("y" + got)
         elif re.match(r"20\d\d-", got):
-            tags |= {"y" + got[:4], f"q{(int(got[5:7]) - 1) // 3 + 1}"}
+            tags |= {"y" + got[:4], f"q{(int(got[5:7]) - 1) // 3 + 1}", f"m{int(got[5:7]):02d}"}
         elif got[0] in "qQ" or got[1:2] == "q":
             tags.add("q" + re.search(r"[1-4]", got).group(0))
         elif got[0] in "1234":
@@ -100,7 +146,7 @@ def periods(text: str) -> set:
             tags.add(next(v for k, v in QUARTER_ORDINALS.items() if got.startswith(k)))
     for i, month in enumerate(MONTHS):
         if month.search(low):
-            tags.add(f"q{i // 3 + 1}")
+            tags |= {f"q{i // 3 + 1}", f"m{i + 1:02d}"}
     return tags
 
 

@@ -28,6 +28,28 @@ RUNS_HEADER = ("date\trepo\tslug\tmode\ttasks\tcritic_rounds\tcritic_blocking\tr
 GITIGNORE = "runs/\ninbox/\n.install-manifest\n.brief-state.json\n__pycache__/\nknowledge/.rag/\nknowledge/.stream/\n"
 
 
+def ensure_ignored(home: pathlib.Path) -> None:
+    """An upgrade must also keep the index out of the data repo: it is large, binary and can be rebuilt."""
+    ignore = home / ".gitignore"
+    if not ignore.exists():
+        return
+    have = ignore.read_text().splitlines()
+    missing = [line for line in GITIGNORE.splitlines() if line.startswith("knowledge/.") and line not in have]
+    if not missing:
+        return
+    ignore.write_text("\n".join(have + missing) + "\n")
+    if not shutil.which("git") or not (home / ".git").exists():
+        return
+    run = lambda *a: subprocess.run(["git", "-C", str(home), *a], capture_output=True, text=True)
+    tracked = run("ls-files", "knowledge/.rag", "knowledge/.stream").stdout.split()
+    if tracked:
+        run("rm", "-r", "-q", "--cached", *tracked)
+    run("add", ".gitignore")
+    staged = set(run("diff", "--cached", "--name-only").stdout.split())
+    if staged <= {".gitignore", *tracked}:  # someone's staged work is not ours to commit: then this waits for theirs
+        run("commit", "-q", "-m", "autolearn: keep the rebuildable index out of git")
+
+
 def seed(home: pathlib.Path, templates: pathlib.Path) -> list:
     created = []
     for d in DIRS:
@@ -41,6 +63,7 @@ def seed(home: pathlib.Path, templates: pathlib.Path) -> list:
         if not (home / rel).exists():
             (home / rel).write_text(text)
             created.append(rel)
+    ensure_ignored(home)
     if shutil.which("git") and not (home / ".git").exists():
         run = lambda *a: subprocess.run(["git", "-C", str(home), *a], capture_output=True)
         run("init", "-q")

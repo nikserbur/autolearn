@@ -82,9 +82,9 @@ class ContextualRetrieval(unittest.TestCase):
 
     def test_periods_are_understood_in_any_notation(self):
         for text in ("Q3 2026", "3 квартал 2026", "третьем квартале 2026", "2026-08-14", "third quarter of 2026"):
-            self.assertEqual(periods(text), {"q3", "y2026"}, text)
-        self.assertEqual(periods("в июле"), {"q3"})
-        self.assertEqual(periods("in December"), {"q4"})
+            self.assertEqual(periods(text) - {"m08"}, {"q3", "y2026"}, text)
+        self.assertEqual(periods("в июле"), {"q3", "m07"})
+        self.assertEqual(periods("in December"), {"q4", "m12"})
         self.assertEqual(periods("the march of progress")  & {"q2"}, set())
 
 
@@ -107,6 +107,11 @@ class TextHandling(RagCase):
         self.run_engine("index")
         self.assertIn("not valid UTF-8", self.stderr)
         self.assertIn("old.md", self.run_engine("search", "--no-log", "opening", "hours", "posted"))
+        self.assertIn("legacy encoding", self.run_engine("status"))
+
+    def test_note_in_a_russian_codepage_can_be_found(self):
+        (self.kb / "cp.md").write_bytes("# Заметка\n\nПароль от стенда меняем раз в квартал.\n".encode("cp1251"))
+        self.assertIn("cp.md", self.run_engine("search", "--no-log", "пароль", "стенда"))
 
     def test_line_numbers_agree_with_an_editor_past_a_form_feed(self):
         self.write("f.md", "# T\n\n## One\n\nfirst\x0cstill the same line\n\n## Two\n\nThe quokka line.\n")
@@ -288,7 +293,7 @@ class ConcurrentWriters(RagCase):
         rag.chmod(0o555)
         try:
             self.run_engine("index", expect=1)
-            self.assertIn("cannot write", self.stderr)
+            self.assertIn("could not update", self.stderr)
             self.assertIn("releases.md", self.run_engine("search", "--no-log", "redeploy", "previous", "container"))
             self.assertIn("could not refresh", self.stderr)
         finally:
@@ -326,8 +331,8 @@ class ConcurrentWriters(RagCase):
         self.fake_models()
         self.env_extra.update(AUTOLEARN_EMBED="fastembed", AUTOLEARN_RERANK="off")
         self.run_engine("index")
-        out = self.run_engine("search", "--no-log", "redeploy", "previous", "container", FAKE_EMBED_FAIL="1",
-                              AUTOLEARN_EMBED_MODEL="other/model")
+        self.write("notes/new.md", "# New\n\n## Fact\n\nA fact that needs embedding now.\n")
+        out = self.run_engine("search", "--no-log", "redeploy", "previous", "container", FAKE_EMBED_FAIL="1")
         self.assertIn("could not refresh", self.stderr)
         self.assertIn("notes/releases.md", out)
 
