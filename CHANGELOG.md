@@ -6,6 +6,44 @@ All notable changes to this project are documented here. The format follows
 with every release, or plugin users will not receive the update. Up to 0.3.1 the project was
 called autolearn.
 
+## [0.5.0] - 2026-11-07
+
+Phase 1 of the [v2 architecture](docs/architecture-v2.md): the research protocol is enforced by a
+ledger instead of promised in prose. Triggered by an independent review of 0.4.0 that found the
+holdout reusable per candidate and the brief checked against itself.
+
+### Added
+- `research/<slug>/LEDGER.jsonl`, append-only and hash-chained, written only by `lab.py`:
+  `register` (fixes the journal row, its machine-readable pass criterion and the expect file),
+  `run` (candidate hash, every attempt counted as a trial, `RUN.json`, `DONE`, `run.log`),
+  `judge` (the registered criterion decides PASS, FAIL or CRASH), `check` (edits after
+  registration, KEEP or BEST without a PASS, unregistered results, unfinished runs, a broken
+  chain), `holdout open/close/status`, `brief`.
+- `lab.py truncate`: decisions before a cut must be the same with the data cut there, the proof
+  of point in time that a self-reported `inputs_ts` cannot give.
+- `tests/fixtures/research/toy_sim.py`: a toy strategy with a planted look-ahead; truncation
+  catches it and passes the honest version.
+
+### Changed
+- One holdout look budget per research, fixed by the first look, opened before the run, only for
+  a candidate judged PASS; any failure spends the holdout. The verification report goes to
+  `sealed/`, outside the knowledge base, and the controller gets only the verdict and the number.
+- The brief is written outside `KB/` and `lab.py brief` traces every number in it to a metrics
+  file, the ledger, the journal or the program before it is copied in.
+- The research skill: expect files and rows are written before the critique; registration fixes
+  them; `KEEP` and `BEST` need the judge's PASS and the reviewer's PASS; knowledge sections are
+  written after the review; every result reports the trial count.
+- `rl-hypothesis-reviewer` reads the record and recomputes before reading anyone's conclusions,
+  ends a review with PASS or BLOCK, and in mode `verify` opens and closes the look itself.
+- `lab.py trace` says when a trace is no evidence of point in time (no `inputs_ts`, or
+  `inputs_ts` equal to `ts`) and takes `--min-delay`; `repro` moves outputs aside so a file left
+  from before cannot pass, and takes `--timeout`; `env --stage sim|verify`; `sample` ignores
+  prices when looking for rare decisions.
+- S6 asks for every decision in the trace, doing nothing included.
+
+### Removed
+- `lab.py holdout <file> log` and `KB/HOLDOUT.tsv`: looks are ledger entries now.
+
 ## [0.4.0] - 2026-11-07
 
 autolearn is now **research-lab**. The project narrows to research and the knowledge base, in two

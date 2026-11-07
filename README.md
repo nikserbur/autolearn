@@ -8,7 +8,7 @@ Claude runs research the way a careful lab does: it writes down what it expects 
 
 [![CI](https://github.com/nikserbur/research-lab/actions/workflows/ci.yml/badge.svg)](https://github.com/nikserbur/research-lab/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-0.4.0-informational)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.5.0-informational)](CHANGELOG.md)
 [![Claude Code plugin](https://img.shields.io/badge/Claude%20Code-plugin-D97757)](#install)
 
 </div>
@@ -68,42 +68,59 @@ flowchart TD
   ENV --> H[Round table: hypotheses<br/>effect · cost · pass criterion]
   H --> CR{reviewer: critique}
   CR -- cut / change --> H
-  CR -- keep --> REG[journal row + expect file:<br/>what each stage should do]
-  REG --> RUN[run in the simulation<br/>writes a decision trace]
+  CR -- keep --> REG[lab.py register:<br/>row, criterion and expect file fixed]
+  REG --> RUN[lab.py run in the simulation,<br/>lab.py judge decides PASS / FAIL]
   RUN --> RV{reviewer: expected against actual,<br/>leakage, costs, recomputed numbers}
   RV -- "every discrepancy<br/>becomes a hypothesis" --> SY[KNOWLEDGE.md:<br/>what we know, what surprised us]
   SY --> H
-  SY -- candidate passes --> VF{reviewer: verify<br/>once, on the holdout}
+  SY -- "judged PASS + reviewer PASS" --> VF{reviewer: verify<br/>one look, sealed report}
   VF --> BR[BRIEF + durable facts<br/>to the global KB]
   RUN -. check-in, never blocks .-> YOU((you))
   YOU -. steer any time .-> H
 ```
 
-Everything lands in `research/<slug>/KB/`; the hook embeds it, so the next round, the reviewer and any future project retrieve it.
+Knowledge lands in `research/<slug>/KB/`; the hook embeds it, so the next round, the reviewer and any future project retrieve it. The protocol's record lands in `research/<slug>/LEDGER.jsonl`.
+
+### The ledger: the protocol is enforced, not promised
+
+An agent that grades its own work drifts: a criterion relaxed after a bad run, an expectation rewritten to match the result, a holdout looked at "just once more". So the state of a research lives in an append-only, hash-chained ledger that only `lab.py` writes:
+
+```text
+lab.py register --lab research/mm E7       # the row, its criterion and expect/E7.md are fixed from here on
+lab.py run --lab research/mm E7 --code scripts/03_sim.py --data data/2026q3.parquet -- python3 scripts/03_sim.py E7
+lab.py judge --lab research/mm E7          # "net_per_trade > 0 & trades >= 300" decides; prints trials so far
+lab.py check --lab research/mm             # edits after registration, KEEP without PASS, a broken chain
+lab.py holdout --lab research/mm open E7   # one look budget per research; any failure spends the holdout
+lab.py brief --lab research/mm research/mm/BRIEF_2026-11-07.md   # every number traces to the record
+```
+
+Every attempt is a trial, crashes included, and every reported result carries the trial count. The verification report goes to `sealed/`, outside the knowledge base, so what the holdout showed cannot shape the next hypothesis.
 
 ### Simulation and verification environments
 
-Hypotheses run only in the simulation environment. A frozen candidate is judged once in the verification environment. Both are written down in round 0 in [`ENVIRONMENT.md`](skills/research/ENVIRONMENT-TEMPLATE.md), and each requirement needs evidence before round 1:
+Hypotheses run only in the simulation environment. A candidate judged PASS there is judged once in the verification environment. Both are written down in round 0 in [`ENVIRONMENT.md`](skills/research/ENVIRONMENT-TEMPLATE.md); the simulation requirements need evidence before round 1, the verification ones before a candidate's look:
 
 | Simulation | Verification |
 |---|---|
-| S1 point in time: decisions see only earlier data, delays modelled | V1 holdout apart by time or entity, with a gap |
-| S2 costs and fills explicit and conservative | V2 candidate frozen: commit, config, data hashes |
+| S1 point in time: the same decisions with the data cut at T | V1 holdout apart by time or entity, with a gap |
+| S2 costs and fills explicit and conservative | V2 candidate frozen: code, config, data hashes in the ledger |
 | S3 reproducible: same inputs, same files | V3 run by the reviewer, never by the controller |
 | S4 isolated: no live orders, no network, read-only data | V4 same environment, only the data differs |
-| S5 controls: nothing gives zero, a known case gives its numbers, a shuffled target gives no edge | V5 looks counted; over budget the result is SPOILED |
-| S6 a decision trace: what each decision looked at, did, why, and what came of it | |
+| S5 controls: nothing gives zero, a known case gives its numbers, a shuffled target gives no edge | V5 looks counted; over budget or after a failure: SPOILED |
+| S6 a decision trace: every decision, doing nothing included: what it looked at, did, why, what came of it | |
 | S7 units and conventions written down | |
 
-`scripts/lab.py` checks what can be checked without judgement:
+`lab.py` also checks the environments, where a script can:
 
 ```text
-lab.py env KB/ENVIRONMENT.md                            # requirements without evidence (exit 1)
-lab.py repro --out results/E0/metrics.tsv -- python3 scripts/03_sim.py   # same command twice, same files?
-lab.py trace results/E7/trace.tsv --expect KB/expect/E7.md   # look-ahead, time order, blind decisions
+lab.py env KB/ENVIRONMENT.md --stage sim                 # requirements without evidence (exit 1)
+lab.py truncate full/trace.tsv cut/trace.tsv --at 2026-03-02T12:50   # a look-ahead shows as a changed decision
+lab.py repro --out results/E0/metrics.tsv -- python3 scripts/03_sim.py   # rewrites the same files twice?
+lab.py trace results/E7/trace.tsv --expect KB/expect/E7.md   # time order, blind decisions, stages vs expectation
 lab.py sample results/E7/trace.tsv                       # best, worst, rare and random decisions to read
-lab.py holdout KB/HOLDOUT.tsv status                     # looks per candidate; SPOILED over budget
 ```
+
+A simulator that stamps its own inputs can claim anything, so `trace` treats a self-reported `inputs_ts` as no proof of S1; `truncate` is the proof: rerun with the data cut at T, and every decision before T must stay the same.
 
 ### Expected against actual
 
@@ -241,8 +258,10 @@ Every component with its trigger and purpose: [docs/components.md](docs/componen
 
 ```text
 research/<slug>/              in your project, one folder per research
-├── KB/                       PROGRAM, ENVIRONMENT, KNOWLEDGE, EXPERIMENTS.tsv, expect/, HOLDOUT.tsv,
-│                             sources/, reviews/, BRIEF_<date>.md  (indexed for retrieval)
+├── KB/                       PROGRAM, ENVIRONMENT, KNOWLEDGE, EXPERIMENTS.tsv, expect/, sources/,
+│                             reviews/, BRIEF_<date>.md  (indexed for retrieval)
+├── LEDGER.jsonl              registrations, runs, verdicts, holdout looks; hash-chained, lab.py only
+├── sealed/                   verification reports, never indexed
 ├── scripts/                  numbered scripts, run from frozen copies
 └── results/<id>/             metrics.tsv, trace.tsv, models and predictions
 
@@ -287,8 +306,10 @@ See [SECURITY.md](SECURITY.md) and [docs/hooks.md](docs/hooks.md).
 
 ## Status and limitations
 
-- **v0.4.0.** The hooks and scripts are covered by tests. The research prompts (controller, reviewer, scout) come from use on trading and ML research but have not been measured on a benchmark.
-- **The environment checks are as good as the trace.** `lab.py trace` catches look-ahead only when the simulator writes `inputs_ts`; whether costs are realistic is the reviewer's judgement, not a script's.
+- **v0.5.0.** The hooks and scripts are covered by tests. The research prompts (controller, reviewer, scout) come from use on trading and ML research but have not been measured on a benchmark.
+- **The environment checks are as good as the runs behind them.** `lab.py truncate` finds a look-ahead only across the cut you choose, so cut at several times; whether costs are realistic is the reviewer's judgement, not a script's.
+- **The ledger guards against drift, not against a determined forger.** Hashes catch edits to registered rows, expectations and the ledger itself; nothing stops someone from rewriting the whole ledger, or from running experiments outside `lab.py`, though `check` flags results that were never registered.
+- **No multiple-testing statistics yet.** The trial count is recorded and printed; deflated Sharpe, block bootstrap and FDR control are phase 2 of [the v2 plan](docs/architecture-v2.md).
 - **research-lab does not bring a simulator.** It states the requirements and checks them; the simulator or pipeline is your project's.
 - **Claude Code only.** There are no adapters for Codex, Cursor or other hosts.
 - **Retrieval is strongest with an embedding model.** Without one (`kb_rag.py setup`) search is lexical plus hashed vectors: paraphrases are often missed and a question in another language than the notes finds nothing (0 of 5 in the benchmark). With one, such a question is still weak (2 of 5 in the top 3), so the output asks Claude to repeat it in the language of the notes. A search with a model takes 1-3 s and about 1 GB of memory on 10,000 chunks.

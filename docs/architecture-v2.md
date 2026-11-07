@@ -1,6 +1,6 @@
 # research-lab v2: evaluation of v0.4.0 and the proposed architecture
 
-Status: **proposal**, 2026-11-07. Nothing here is implemented yet.
+Status: **phase 1 implemented in v0.5.0** (2026-11-07); phases 2-5 are proposals.
 
 ## How v0.4.0 was evaluated
 
@@ -91,7 +91,7 @@ number. After a FAIL the holdout is spent: the next confirmation needs a new, la
 ### 7. Typed knowledge
 Every KB section carries `kind` (measurement, expectation, conjecture, snippet), `status` (valid,
 invalid, superseded) and `scope` (data window, cost model, project). Retrieval filters and labels
-by them; `expect/`, `HOLDOUT.tsv` and `sealed/` are not indexed; a research KB is searched only
+by them; `expect/` and `sealed/` are not indexed; a research KB is searched only
 by its own research until knowledge-ingest promotes facts; an `INVALID` decision marks its
 conclusions invalid instead of leaving them next to the new ones (bi-temporal, as in Graphiti).
 `kb_lint.py` flags stale numeric facts.
@@ -110,7 +110,7 @@ expectation), and a scripted reviewer run is scored on finding the rest.
 
 | Phase | Content | Fixes |
 |---|---|---|
-| 1 | ledger, `register`/`run`/`judge`/`check`/`holdout open`, one holdout budget, sealed verify, brief checked against the ledger, `repro` and `trace` fixes, the four contradictions, toy fixture | C1, C2, H1, H3, H4, H7, M1 |
+| 1 (done, v0.5.0) | ledger, `register`/`run`/`judge`/`check`/`holdout open`, one holdout budget, sealed verify, brief checked against the ledger, `repro` and `trace` fixes, the four contradictions, toy fixture | C1, C2, H1, H3, H4, H7, M1 |
 | 2 | trial count, deflated Sharpe, block bootstrap for BEST, BY within a round, LORD++ across rounds | H2 |
 | 3 | typed knowledge, private research KBs, supersession, stale-fact lint, lock-before-model | H5, M3 |
 | 4 | executor agent, `status`/`STATUS.md`, resumable jobs, per-round files, brief lists active researches | H6, M2 |
