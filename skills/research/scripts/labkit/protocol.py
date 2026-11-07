@@ -18,7 +18,7 @@ import time
 from . import tables
 from .ledger import ID, Ledger, judge, parse_criterion, read_journal, read_metrics, sha256_bytes, sha256_file
 
-PRE_RUN = ("id", "round", "hypothesis", "change", "expected", "pass_criterion", "commit", "data", "seed")
+PRE_RUN = ("id", "round", "parent", "hypothesis", "change", "expected", "pass_criterion", "commit", "data", "seed")
 MAX_LOOKS = 3  # more looks than this and the holdout is a selection set
 KNOWLEDGE_CAP = 30_000  # bytes of KNOWLEDGE.md before older sections go to KB/archive/
 HEARTBEAT_EVERY, HEARTBEAT_STALE = 30, 120  # seconds: a run whose heartbeat is older than this is not running
@@ -143,6 +143,9 @@ def cmd_register(a) -> int:
         parse_criterion(row.get("pass_criterion", ""))
     except ValueError as e:
         return fail(f"pass_criterion of {a.id}: {e}")
+    parent = row.get("parent", "").strip()
+    if parent and not ledger.find("register", parent):
+        return fail(f"parent {parent!r} of {a.id} is not a registered experiment: a child changes something that ran")
     ledger.append("register", id=a.id, fields={k: row.get(k, "") for k in PRE_RUN},
                   expect_sha=sha256_file(expect_file(a.lab, a.id)), criterion=row["pass_criterion"])
     print(f"registered {a.id}: {row['pass_criterion']}. Its row and expect/{a.id}.md are fixed from now on.")
@@ -164,6 +167,10 @@ def cmd_run(a) -> int:
     if ledger.find("run_start", a.id) and not a.again:
         return fail(f"{a.id} has run already; --again runs it once more and counts as another trial")
     from . import selection  # every run is a test, recorded as it ends
+    settings = selection.research_settings(ledger)
+    if settings["max_trials"] and trial_count(ledger) >= settings["max_trials"]:
+        return fail(f"the research's budget of {settings['max_trials']} trials is spent: stop, write the brief, "
+                    "or start a new research")
     for job in runs(ledger):  # close dead runs first, so they count as tests with p = 1
         if job["end"] is None and not live(a.lab, job["start"]):
             start = job["start"]
@@ -204,10 +211,10 @@ def cmd_run(a) -> int:
     with (out / "run.log").open("w", encoding="utf-8") as log:
         try:
             child = subprocess.Popen(a.command, stdout=log, stderr=subprocess.STDOUT,
-                                     env=dict(os.environ, RESEARCH_LAB_RUN=a.id))
+                                     env=dict(os.environ, RESEARCH_LAB_RUN=a.id), start_new_session=os.name != "nt")
             info["child_pid"] = child.pid
             (out / "RUN.json").write_text(json.dumps(info, indent=1), encoding="utf-8")
-            code = child.wait()
+            code = wait_within(child, settings["run_timeout"], log)
         except OSError as e:
             log.write(f"lab.py: could not start the command: {e}\n")
             code = 127
@@ -224,6 +231,30 @@ def cmd_run(a) -> int:
     for line in selection.describe(selection.record_test(a.lab, ledger, a.id, entry, code)):
         print(line)
     return code
+
+
+def wait_within(child, limit, log) -> int:
+    """The child's exit code; past the research's time budget its whole process group is stopped and the
+    run ends with 124, as `timeout` does, so every run gets the same compute."""
+    try:
+        return child.wait(timeout=limit)
+    except subprocess.TimeoutExpired:
+        log.write(f"\nlab.py: stopped after the research's budget of {limit} s per run\n")
+        log.flush()
+        if os.name == "nt":
+            child.kill()
+        else:
+            import signal
+            for sig, grace in ((signal.SIGTERM, 10), (signal.SIGKILL, 10)):
+                with contextlib.suppress(ProcessLookupError):
+                    os.killpg(child.pid, sig)
+                try:
+                    child.wait(timeout=grace)
+                    break
+                except subprocess.TimeoutExpired:
+                    continue
+        child.wait()
+        return 124
 
 
 def cmd_judge(a) -> int:

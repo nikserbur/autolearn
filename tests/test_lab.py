@@ -164,8 +164,8 @@ class Repro(LabCase):
         self.assertIn("not written", self.lab("repro", "--out", "nothing.tsv", "--", sys.executable, "-c", "pass", expect=1))
 
 
-class Protocol(LabCase):
-    """register -> run -> judge -> check, and the holdout, through the ledger."""
+class ProtocolCase(LabCase):
+    """A research folder with a toy journal, and the helpers the protocol tests share."""
 
     def setUp(self):
         super().setUp()
@@ -173,11 +173,12 @@ class Protocol(LabCase):
         self.row("E1", "net_per_trade > 0 & trades >= 30")
         self.write("research/toy/KB/expect/E1.md", "| Stage | Should do |\n|---|---|\n| signal | long on both up |\n")
 
-    def row(self, id, criterion, decision="", result="", review=""):
+    def row(self, id, criterion, decision="", result="", review="", parent=""):
         path = self.labdir / "KB" / "EXPERIMENTS.tsv"
         head = (ROOT / "skills" / "research" / "EXPERIMENTS-TEMPLATE.tsv").read_text()
         rows = path.read_text() if path.exists() else head
-        line = "\t".join([id, "1", "H1.1", "toy", "+0.1 per trade", criterion, "abc", "seed7", "7", result, decision, "", review])
+        line = "\t".join([id, "1", parent, "H1.1", "toy", "+0.1 per trade", criterion, "abc", "seed7", "7", result,
+                           decision, "", review])
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(rows + line + "\n")
 
@@ -201,6 +202,25 @@ class Protocol(LabCase):
         out = self.labdir / "sealed" / "E1"
         subprocess.run([sys.executable, str(TOY), str(out), *flags], check=True)
         return str(out / "metrics.tsv")
+
+    def series(self, id, mean, seed, again=False, expect=0):
+        out, extra = self.labdir / "results" / id, ["--again"] if again else []
+        return self.p("run", id, "--code", str(SERIES), *extra, "--", sys.executable, str(SERIES), str(out),
+                      str(mean), str(seed), expect=expect)
+
+    def make_best(self, id="E1", mean=0.5, seed=1, expect=0):
+        if id != "E1":
+            self.row(id, "net_per_trade > 0 & trades >= 30")
+            self.write(f"research/toy/KB/expect/{id}.md", "| Stage | Should do |\n|---|---|\n| day | earn |\n")
+        self.p("register", id)
+        self.series(id, mean, seed)
+        self.p("judge", id)
+        self.p("review", id, "--verdict", "PASS", "--round", "R01")
+        return self.p("best", id, expect=expect)
+
+
+class Protocol(ProtocolCase):
+    """register -> run -> judge -> check, and the holdout, through the ledger."""
 
     def test_register_needs_a_row_an_expectation_and_a_readable_criterion(self):
         self.assertIn("no row E9", self.p("register", "E9", expect=1))
@@ -299,21 +319,6 @@ class Protocol(LabCase):
             proc.wait()
         self.assertEqual([e for e in (self.labdir / "LEDGER.jsonl").read_text().splitlines()].__len__(), 40)
         self.assertIn("0 registered", self.p("check"))
-
-    def series(self, id, mean, seed, again=False, expect=0):
-        out, extra = self.labdir / "results" / id, ["--again"] if again else []
-        return self.p("run", id, "--code", str(SERIES), *extra, "--", sys.executable, str(SERIES), str(out),
-                      str(mean), str(seed), expect=expect)
-
-    def make_best(self, id="E1", mean=0.5, seed=1, expect=0):
-        if id != "E1":
-            self.row(id, "net_per_trade > 0 & trades >= 30")
-            self.write(f"research/toy/KB/expect/{id}.md", "| Stage | Should do |\n|---|---|\n| day | earn |\n")
-        self.p("register", id)
-        self.series(id, mean, seed)
-        self.p("judge", id)
-        self.p("review", id, "--verdict", "PASS", "--round", "R01")
-        return self.p("best", id, expect=expect)
 
     def test_holdout_is_bound_to_the_best_candidate_and_spent_by_a_failure(self):
         self.p("register", "E1")
@@ -531,6 +536,100 @@ class Protocol(LabCase):
         self.write("research/toy/KB/PROGRAM.md", "Costs: spread 0.50, fees 1,250.75 a month.\n")
         self.write("research/toy/BRIEF.md", "Costs as planned: spread 0.50 and 1,250.75 in fees.\n")
         self.assertIn("2 of 2 numbers trace", self.p("brief", brief))
+
+
+class SearchTree(ProtocolCase):
+    """The experiments as a tree, what to grow next, the research's budgets, and worktrees."""
+
+    def child(self, id, parent, mean, seed, expect=0):
+        self.row(id, "net_per_trade > 0 & trades >= 30", parent=parent)
+        self.write(f"research/toy/KB/expect/{id}.md", "| Stage | Should do |\n|---|---|\n| day | earn |\n")
+        out = self.p("register", id, expect=expect)
+        if expect == 0:
+            self.series(id, mean, seed)
+        return out
+
+    def test_a_parent_must_be_registered_and_the_tree_draws_the_lineage(self):
+        self.assertIn("is not a registered experiment", self.child("E2", "E9", 0.1, 2, expect=1))
+        self.p("register", "E1")
+        self.series("E1", 0.3, 1)
+        self.child("E2", "E1", 0.4, 2)
+        self.child("E3", "E2", 0.2, 3)
+        self.child("E4", "E1", 0.1, 4)
+        lines = self.p("tree").splitlines()
+        self.assertTrue(lines[0].startswith("E1  "))
+        self.assertTrue(lines[1].startswith("├── E2  "))
+        self.assertTrue(lines[2].startswith("│   └── E3  "))
+        self.assertTrue(lines[3].startswith("└── E4  "))
+        self.assertIn("mean", lines[1])
+
+    def test_next_starts_ideas_debugs_crashes_and_spreads_over_branches(self):
+        self.p("register", "E1")
+        self.series("E1", 0.3, 1)
+        out = self.p("next")
+        self.assertTrue(out.startswith("draft a new root"))
+        self.child("E2", "", 0.2, 2)
+        self.row("E5", "net_per_trade > 0 & trades >= 30", parent="E1")
+        self.write("research/toy/KB/expect/E5.md", "x")
+        self.p("register", "E5")
+        crash = self.write("crash.py", "raise SystemExit(3)\n")
+        self.p("run", "E5", "--code", crash, "--", sys.executable, crash, expect=3)
+        out = self.p("next", "--k", "2")
+        self.assertIn("debug E5", out)
+        out = self.p("next", "--k", "4").splitlines()
+        improve = [line.split("\t")[0] for line in out if line.startswith("improve")]
+        self.assertEqual(sorted(improve), ["improve E1", "improve E2"])  # one per branch at k = 4
+
+    def test_a_worked_out_node_and_a_stuck_search(self):
+        self.p("register", "E1")
+        self.series("E1", 0.6, 1)
+        self.child("R2", "", 0.0, 9)
+        for n, seed in enumerate((2, 3, 4), 2):
+            self.child(f"E{n}", "E1", 0.0, seed)
+        out = self.p("next", "--k", "6")
+        self.assertIn("leave E1", out)
+        self.assertIn("draft a new root\tthe best has not changed in 5 runs", out)
+
+    def test_runs_stop_at_the_time_budget_and_the_trial_budget(self):
+        self.assertIn("run_timeout 2", self.p("settings", "--run-timeout", "2", "--max-trials", "2"))
+        self.p("register", "E1")
+        slow = self.write("slow.py", "import subprocess, sys, time\n"
+                          "p = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)'])\n"
+                          "open('child.pid', 'w').write(str(p.pid))\ntime.sleep(60)\n")
+        out = self.p("run", "E1", "--code", slow, "--", sys.executable, slow, expect=124)
+        self.assertIn("exit 124", out)
+        self.assertIn("stopped after the research's budget of 2 s", (self.labdir / "results" / "E1" / "run.log").read_text())
+        grandchild = int((self.dir / "child.pid").read_text())
+        time_left = 50
+        import time
+        while time_left and self._alive(grandchild):
+            time.sleep(0.1)
+            time_left -= 1
+        self.assertFalse(self._alive(grandchild))  # the whole group is stopped
+        self.series("E1", 0.3, 1, again=True)
+        self.assertIn("budget of 2 trials is spent", self.series("E1", 0.3, 1, again=True, expect=1))
+
+    @staticmethod
+    def _alive(pid):
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            return False
+        out = subprocess.run(["ps", "-o", "stat=", "-p", str(pid)], capture_output=True, text=True).stdout.strip()
+        return bool(out) and not out.startswith("Z")
+
+    def test_worktrees_give_each_experiment_its_own_copy(self):
+        repo = self.dir
+        for cmd in (["init", "-q"], ["add", "-A"], ["-c", "user.name=t", "-c", "user.email=t@e", "commit", "-qm", "x"]):
+            subprocess.run(["git", "-C", str(repo), *cmd], check=True, capture_output=True)
+        out = self.p("worktree", "add", "E1")
+        path = self.labdir / "worktrees" / "E1"
+        self.assertTrue((path / "research" / "toy" / "KB" / "expect" / "E1.md").exists())
+        self.assertIn("worktrees/", (self.labdir / ".gitignore").read_text())
+        self.assertIn(str(path.resolve()), self.p("worktree", "list"))
+        self.assertIn("exists already", self.p("worktree", "add", "E1", expect=1))
+        self.assertIn("removed", self.p("worktree", "remove", "E1"))
+        self.assertFalse(path.exists())
 
 
 class ToyResearch(LabCase):

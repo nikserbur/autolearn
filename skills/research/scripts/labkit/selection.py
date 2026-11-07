@@ -23,13 +23,13 @@ from .protocol import bad_id, current_best, fail, journal, judged_latest, latest
 MIN_PERIODS = 20
 MIN_DSR = 0.95
 MAX_ALPHA = 0.1
-DEFAULTS = {"column": "pnl", "block": "auto", "alpha": 0.05}
+DEFAULTS = {"column": "pnl", "block": "auto", "alpha": 0.05, "run_timeout": None, "max_trials": None}
 VERDICTS = ("PASS", "BLOCK")
 
 
 def research_settings(ledger: Ledger) -> dict:
     found = ledger.last("settings")
-    return {k: found[k] for k in DEFAULTS} if found else dict(DEFAULTS)
+    return {k: found.get(k, v) for k, v in DEFAULTS.items()} if found else dict(DEFAULTS)
 
 
 def read_series(path: pathlib.Path, column: str) -> dict:
@@ -131,13 +131,19 @@ def describe(e: dict) -> list:
 def cmd_settings(a) -> int:
     ledger = Ledger(a.lab)
     current = research_settings(ledger)
-    if a.column is None and a.block is None and a.alpha is None:
+    if a.column is None and a.block is None and a.alpha is None and a.run_timeout is None and a.max_trials is None:
         print("  ".join(f"{k} {v}" for k, v in current.items()) + ("" if ledger.last("settings") else "  (defaults)"))
         return 0
     if ledger.find("stats"):
         return fail("the settings are fixed: this research has tested runs already")
     new = {"column": a.column or current["column"], "block": a.block or current["block"],
-           "alpha": a.alpha if a.alpha is not None else current["alpha"]}
+           "alpha": a.alpha if a.alpha is not None else current["alpha"],
+           "run_timeout": a.run_timeout if a.run_timeout is not None else current["run_timeout"],
+           "max_trials": a.max_trials if a.max_trials is not None else current["max_trials"]}
+    if new["run_timeout"] is not None and not 1 <= new["run_timeout"] <= 7 * 86400:
+        return fail("run-timeout: seconds per run, from 1 to a week")
+    if new["max_trials"] is not None and not 1 <= new["max_trials"] <= 100_000:
+        return fail("max-trials: from 1 to 100000")
     if not re.fullmatch(r"[A-Za-z_][\w.]*", new["column"]):
         return fail(f"column {new['column']!r}: a plain column name")
     if new["block"] != "auto":

@@ -12,7 +12,7 @@ Protocol (state lives in <lab>/LEDGER.jsonl, append-only and hash-chained; <lab>
     lab.py brief --lab DIR BRIEF.md                  every number in the brief traces to the record
 
 Selection (every run is tested as it ends on results/ID/daily.tsv: a `period` column and a value column):
-    lab.py settings --lab DIR [--column pnl] [--block auto|N] [--alpha 0.05]
+    lab.py settings --lab DIR [--column pnl] [--block auto|N] [--alpha 0.05] [--run-timeout S] [--max-trials N]
                                                      fixed for the whole research, before its first run
     lab.py stats --lab DIR ID                        the recorded test of the latest run: deflated Sharpe after N
                                                      trials, block-bootstrap p and interval, LORD++ decision
@@ -26,6 +26,13 @@ Where it stands (for a new session, or the user):
     lab.py jobs --lab DIR                            every run: running, interrupted, done or crashed
     lab.py status --lab DIR                          writes DIR/STATUS.md: requirements, rounds, trials, best, holdout,
                                                      what waits for whom
+
+Search (experiments form a tree through the journal's `parent` column):
+    lab.py tree --lab DIR                            the tree, with each node's state and test
+    lab.py next --lab DIR [--k 3]                    which nodes to grow: debug a crash, improve the best lower
+                                                     bounds across branches, start a new idea when stuck
+    lab.py worktree --lab DIR add|remove|list [ID] [--from REF] [--force]
+                                                     a separate git working copy per experiment that changes code
 
 Environment:
     lab.py env KB/ENVIRONMENT.md [--stage sim|verify]
@@ -56,7 +63,7 @@ import re
 import subprocess
 import sys
 
-from labkit import protocol, selection, status, tables
+from labkit import protocol, selection, status, tables, tree, worktree
 
 REQUIRED = ("ts", "stage", "action")
 EXPECTED = ("inputs", "reason", "outcome")
@@ -347,6 +354,15 @@ def main(argv=None) -> int:
     s.add_argument("--column")
     s.add_argument("--block")
     s.add_argument("--alpha", type=float)
+    s.add_argument("--run-timeout", type=int)
+    s.add_argument("--max-trials", type=int)
+    with_lab(sub, "tree")
+    with_lab(sub, "next").add_argument("--k", type=int, default=3)
+    s = with_lab(sub, "worktree")
+    s.add_argument("action", choices=("add", "remove", "list"))
+    s.add_argument("id", nargs="?")
+    s.add_argument("--from", dest="ref")
+    s.add_argument("--force", action="store_true")
     for name in ("stats", "best"):
         with_lab(sub, name).add_argument("id")
     s = with_lab(sub, "compare")
@@ -386,7 +402,8 @@ def main(argv=None) -> int:
             "check": protocol.cmd_check, "holdout": protocol.cmd_holdout, "brief": protocol.cmd_brief,
             "settings": selection.cmd_settings, "stats": selection.cmd_stats, "compare": selection.cmd_compare,
             "review": selection.cmd_review, "best": selection.cmd_best, "fdr": selection.cmd_fdr,
-            "jobs": status.cmd_jobs, "status": status.cmd_status,
+            "jobs": status.cmd_jobs, "status": status.cmd_status, "tree": tree.cmd_tree, "next": tree.cmd_next,
+            "worktree": worktree.cmd_worktree,
             "env": cmd_env, "trace": cmd_trace, "truncate": cmd_truncate, "sample": cmd_sample,
             "repro": cmd_repro}[a.cmd](a)
 
