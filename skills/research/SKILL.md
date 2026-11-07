@@ -117,7 +117,8 @@ missing hypotheses it found. Skip only for a single cheap hypothesis.
 1. `LAB register --lab <folder> <id>`: from now on the row's pre-run cells and `expect/<id>.md` are
    fixed; `LAB check` reports any edit. A changed experiment gets a new id.
 2. `LAB run --lab <folder> <id> --code <script> --config <file> --data <file> -- <command>`: in the
-   simulation environment only, never on the holdout. It records the candidate hash and the attempt
+   simulation environment only, never on the holdout. `--code` names every file that makes the
+   candidate; `metrics.tsv` holds one row of totals (aggregate seeds and days before writing it). It records the candidate hash and the attempt
    (every attempt is a trial, crashes included), moves stale outputs aside, logs to
    `results/<id>/run.log`, and writes `RUN.json` and `DONE`. Long jobs: start it in the background
    with a monitor; never stop or touch other people's processes, no `pkill`.
@@ -129,8 +130,9 @@ missing hypotheses it found. Skip only for a single cheap hypothesis.
 `LAB judge --lab <folder> <id>` applies the registered criterion to the run's own `metrics.tsv` and
 prints PASS, FAIL or CRASH with the number of trials so far. Fill the row's result cells with what
 it printed and the artifact paths. A decision (`KEEP` / `DISCARD` / `ITERATE` / `INVALID`, `BEST` for
-the current best) waits for the review: `KEEP` and `BEST` need the judge's PASS and the reviewer's
-PASS, and `LAB check` refuses them otherwise. Negative results are knowledge too.
+the current best) waits for the review: `KEEP` and `BEST` need the judge's PASS on the latest run
+and the reviewer's PASS written into the row's review cell (`R03 PASS`); `LAB check` refuses them
+otherwise. Negative results are knowledge too.
 
 ## 7. Independent review: expected against actual
 After every finished batch and always before a new round: Agent -> `rl-hypothesis-reviewer`, mode
@@ -164,7 +166,7 @@ conflicts with the evidence or the next step costs far more than the program all
 ## 10. Verification, stop rule and handoff
 1. When a candidate is judged PASS in simulation and the reviewer's verdict is PASS: Agent ->
    `rl-hypothesis-reviewer`, mode `verify`: the candidate id, `ENVIRONMENT.md`, the research folder,
-   the LAB command. It proves V1-V5 for the candidate, opens the look with `LAB holdout open`, runs it
+   the LAB command. It proves V1-V5 for the candidate (`LAB holdout open` refuses until they are), opens the look, runs it
    once on the holdout, writes its report into `sealed/`, closes the look with `LAB holdout close`
    (the candidate's own registered criterion decides), and returns only PASS, FAIL or SPOILED with
    the number. You never run the holdout, never read `sealed/`, and never change a candidate after its

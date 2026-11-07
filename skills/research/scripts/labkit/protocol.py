@@ -13,16 +13,36 @@ import shutil
 import subprocess
 import time
 
-from .ledger import Ledger, judge, parse_criterion, read_journal, read_metrics, sha256_bytes, sha256_file
+from . import tables
+from .ledger import ID, Ledger, judge, parse_criterion, read_journal, read_metrics, sha256_bytes, sha256_file
 
 PRE_RUN = ("id", "round", "hypothesis", "change", "expected", "pass_criterion", "commit", "data", "seed")
-BRIEF_NUMBER = re.compile(r"(?<![\w.])[-+]?(?:\d+\.\d+%?|\d+%)(?!\.\d)")
+MAX_LOOKS = 3  # more looks than this and the holdout is a selection set
+# Decimals and percentages anywhere; whole numbers of 10 and more unless part of a date, time, id or version
+BRIEF_NUMBER = re.compile(r"(?<![\w.,:/-])[-+]?(?:\d+\.\d+%?|\d+%|\d{2,})(?![\w%]|[.,:/-]\d)")
 CELL_NUMBER = re.compile(r"[-+]?\d+(?:\.\d+)?")
+THOUSANDS = re.compile(r"(?<=\d),(?=\d{3}(?!\d))")
 
 
 def fail(message: str) -> int:
     print(f"! {message}")
     return 1
+
+
+def bad_id(a):
+    if getattr(a, "id", None) and not ID.match(a.id):
+        return fail(f"id {a.id!r}: letters, digits, '.', '_' and '-' only, starting with a letter or digit")
+    return 0
+
+
+def latest_run(ledger: Ledger, id: str):
+    return ledger.last("run_start", id)
+
+
+def judged_latest(ledger: Ledger, id: str) -> bool:
+    """The last judgement is a PASS of the latest run, not of an earlier attempt."""
+    j, run = ledger.last("judge", id), latest_run(ledger, id)
+    return bool(j and run and j.get("verdict") == "PASS" and j.get("run_seq") == run["seq"])
 
 
 def journal(lab: pathlib.Path) -> dict:
@@ -49,6 +69,8 @@ def edits(lab: pathlib.Path, ledger: Ledger, id: str) -> list:
 
 
 def cmd_register(a) -> int:
+    if bad_id(a):
+        return 1
     ledger, row = Ledger(a.lab), journal(a.lab).get(a.id)
     if row is None:
         return fail(f"no row {a.id} in KB/EXPERIMENTS.tsv: write it first")
@@ -67,12 +89,17 @@ def cmd_register(a) -> int:
 
 
 def cmd_run(a) -> int:
-    if not a.command:
-        return fail("usage: lab.py run --lab DIR ID [--code F] [--config F] [--data F] -- COMMAND ...")
+    if bad_id(a):
+        return 1
+    if not a.command or not a.code:
+        return fail("usage: lab.py run --lab DIR ID --code F [--code F ...] [--config F] [--data F] -- COMMAND ...; "
+                    "--code names the files that make the candidate, so its hash means something")
     ledger = Ledger(a.lab)
     problems = edits(a.lab, ledger, a.id)
     if problems:
         return fail(f"{a.id}: " + "; ".join(problems))
+    if ledger.find("holdout_open", a.id):
+        return fail(f"{a.id} was looked at on the holdout; it cannot change. A new candidate gets a new id")
     if ledger.find("run_start", a.id) and not a.again:
         return fail(f"{a.id} has run already; --again runs it once more and counts as another trial")
     hashes = {}
@@ -113,13 +140,15 @@ def cmd_run(a) -> int:
 
 
 def cmd_judge(a) -> int:
+    if bad_id(a):
+        return 1
     ledger = Ledger(a.lab)
     problems = edits(a.lab, ledger, a.id)
     if problems:
         return fail(f"{a.id}: " + "; ".join(problems))
-    end = ledger.last("run_end", a.id)
-    if not end:
-        return fail(f"{a.id} has no finished `lab.py run`")
+    end, run = ledger.last("run_end", a.id), latest_run(ledger, a.id)
+    if not end or not run or end["seq"] < run["seq"]:
+        return fail(f"{a.id} has no finished `lab.py run` (its latest run may still be going)")
     metrics_path = a.lab / "results" / a.id / "metrics.tsv"
     if end["exit"] != 0:
         verdict, lines, metrics = "CRASH", [f"the run exited with code {end['exit']}"], {}
@@ -127,14 +156,17 @@ def cmd_judge(a) -> int:
         return fail(f"results/{a.id}/metrics.tsv is missing or changed after the run")
     else:
         clauses = parse_criterion(ledger.last("register", a.id)["criterion"])
-        metrics = read_metrics(metrics_path)
         try:
+            metrics = read_metrics(metrics_path)
             verdict, lines = judge(clauses, metrics)
+        except ValueError as e:
+            return fail(f"results/{a.id}/metrics.tsv: {e}")
         except KeyError as e:
-            return fail(f"results/{a.id}/metrics.tsv has no metric {e}")
+            return fail(f"results/{a.id}/metrics.tsv has no finite value for {e}")
         metrics = {name: metrics[name] for name, _, _ in clauses}
     trials = len(ledger.find("run_start"))
-    ledger.append("judge", id=a.id, verdict=verdict, metrics=metrics, trials=trials)
+    ledger.append("judge", id=a.id, verdict=verdict, metrics=metrics, trials=trials,
+                  run_seq=run["seq"], candidate=run["candidate"])
     print(f"{a.id}: {verdict}  ({trials} trial{'s' if trials != 1 else ''} so far in this research)")
     for line in lines:
         print(f"  {line}")
@@ -160,8 +192,11 @@ def cmd_check(a) -> int:
         decision = row.get("decision", "").upper()
         if "BEST" in decision:
             best.append(id)
-        if ("KEEP" in decision or "BEST" in decision) and (ledger.last("judge", id) or {}).get("verdict") != "PASS":
-            errors.append(f"{id}: marked {row.get('decision')} without a PASS from lab.py judge")
+        if "KEEP" in decision or "BEST" in decision:
+            if not judged_latest(ledger, id):
+                errors.append(f"{id}: marked {row.get('decision')} without a PASS from lab.py judge on its latest run")
+            if "PASS" not in row.get("review", "").upper():
+                errors.append(f"{id}: marked {row.get('decision')} without the reviewer's PASS in its review cell")
         if id not in registered and row.get("result", "").strip():
             errors.append(f"{id}: has a result but was never registered")
     warnings = [f"{e['id']}: started {e['ts']} (pid {e.get('pid')}), no end: running, or crashed" for e in unfinished(ledger)]
@@ -179,6 +214,8 @@ def cmd_check(a) -> int:
 
 
 def cmd_holdout(a) -> int:
+    if bad_id(a):
+        return 1
     ledger = Ledger(a.lab)
     opens, closes = ledger.find("holdout_open"), ledger.find("holdout_close")
     budget = opens[0]["budget"] if opens else (a.budget or 1)
@@ -194,8 +231,15 @@ def cmd_holdout(a) -> int:
     if a.action == "open":
         if opens and a.budget and a.budget != budget:
             return fail(f"the look budget was fixed at {budget} by the first look")
-        if (ledger.last("judge", a.id) or {}).get("verdict") != "PASS":
-            return fail(f"{a.id} was not judged PASS in simulation; only such a candidate is looked at")
+        if not 1 <= budget <= MAX_LOOKS:
+            return fail(f"a look budget of {budget}: 1 to {MAX_LOOKS} looks per research, or the holdout becomes a selection set")
+        if not judged_latest(ledger, a.id):
+            return fail(f"{a.id}: its latest run was not judged PASS in simulation; only such a candidate is looked at")
+        env = a.lab / "KB" / "ENVIRONMENT.md"
+        rows = tables.requirements(env, "verify")
+        open_ = tables.unproven(rows) if rows else [f"no V requirements in {env}"]
+        if open_:
+            return fail("verification requirements are not proven: " + "; ".join(open_))
         problems = edits(a.lab, ledger, a.id)
         if problems:
             return fail(f"{a.id}: " + "; ".join(problems))
@@ -215,15 +259,24 @@ def cmd_holdout(a) -> int:
         return 0
     if not opens or len(opens) == len(closes) or opens[-1]["id"] != a.id:
         return fail(f"no open look for {a.id}")
-    if not a.metrics or not pathlib.Path(a.metrics).is_file():
-        return fail("close needs --metrics FILE from the holdout run")
+    path = pathlib.Path(a.metrics or "")
+    sealed = (a.lab / "sealed").resolve()
+    if not a.metrics or not path.is_file() or sealed not in path.resolve().parents:
+        return fail(f"close needs --metrics FILE written by the holdout run under {a.lab / 'sealed'}")
+    digest = sha256_file(path)
+    if any(e.get("metrics_sha") == digest for e in ledger.find("run_end")):
+        return fail(f"{a.metrics} is the output of a simulation run, not of the holdout")
+    if latest_run(ledger, a.id)["candidate"] != opens[-1]["candidate"]:
+        return fail(f"{a.id} changed after its look was opened")
     clauses = parse_criterion(ledger.last("register", a.id)["criterion"])
-    metrics = read_metrics(pathlib.Path(a.metrics))
     try:
+        metrics = read_metrics(path)
         verdict, lines = judge(clauses, metrics)
+    except ValueError as e:
+        return fail(f"{a.metrics}: {e}")
     except KeyError as e:
-        return fail(f"{a.metrics} has no metric {e}")
-    ledger.append("holdout_close", id=a.id, verdict=verdict, look=len(opens),
+        return fail(f"{a.metrics} has no finite value for {e}")
+    ledger.append("holdout_close", id=a.id, verdict=verdict, look=len(opens), metrics_sha=digest,
                   metrics={name: metrics[name] for name, _, _ in clauses})
     print(f"{a.id} on the holdout: {verdict}")
     for line in lines:
@@ -238,11 +291,11 @@ def known_numbers(lab: pathlib.Path, ledger: Ledger) -> list:
     for e in ledger.entries():
         values += [v for v in (e.get("metrics") or {}).values() if isinstance(v, (int, float))]
         values += [e["trials"]] if "trials" in e else []
-    texts = [cell for row in journal(lab).values() for cell in row.values()]
-    for name in ("PROGRAM.md", "ENVIRONMENT.md"):
+    values += [len(ledger.find("run_start")), len(ledger.find("register")), len(ledger.find("holdout_open"))]
+    for name in ("PROGRAM.md", "ENVIRONMENT.md"):  # stated costs, windows and limits; never the expectations
         path = lab / "KB" / name
-        texts += [path.read_text(encoding="utf-8")] if path.exists() else []
-    values += [float(n) for text in texts for n in CELL_NUMBER.findall(text)]
+        text = path.read_text(encoding="utf-8") if path.exists() else ""
+        values += [float(n) for n in CELL_NUMBER.findall(THOUSANDS.sub("", text))]
     return values
 
 
@@ -258,10 +311,12 @@ def cmd_brief(a) -> int:
     path = pathlib.Path(a.file)
     values, missing, count = known_numbers(a.lab, Ledger(a.lab)), [], 0
     for n, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
-        for token in BRIEF_NUMBER.findall(line):
+        for token in BRIEF_NUMBER.findall(THOUSANDS.sub("", line)):
+            if "." not in token and "%" not in token and 1900 <= int(token.lstrip("+-")) <= 2100:
+                continue  # a year
             count += 1
             if not traced(token, values):
-                missing.append(f"line {n}: {token} is in no metrics file, ledger entry, journal row or program")
+                missing.append(f"line {n}: {token} is in no metrics file, ledger entry or program")
     for m in missing:
         print(f"! {m}")
     print(f"{count - len(missing)} of {count} numbers trace to the record")

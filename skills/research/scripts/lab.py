@@ -33,26 +33,23 @@ import collections
 import datetime
 import hashlib
 import json
+import math
 import pathlib
 import random
 import re
 import subprocess
 import sys
 
-from labkit import protocol
+from labkit import protocol, tables
 
 REQUIRED = ("ts", "stage", "action")
 EXPECTED = ("inputs", "reason", "outcome")
-PROVEN = {"✅", "ok", "yes", "pass", "done"}
-NOT_APPLICABLE = {"n/a", "na", "-"}
-STAGE_PREFIX = {"sim": "S", "verify": "V"}
 
 
 def read_trace(path: pathlib.Path) -> list:
-    text = path.read_text(encoding="utf-8")
+    lines = [line.rstrip("\r") for line in path.read_text(encoding="utf-8").split("\n") if line.strip()]
     if path.suffix in (".jsonl", ".json"):
-        return [json.loads(line) for line in text.splitlines() if line.strip()]
-    lines = [line for line in text.splitlines() if line.strip()]
+        return [json.loads(line) for line in lines]
     if not lines:
         return []
     head = lines[0].split("\t")
@@ -60,14 +57,17 @@ def read_trace(path: pathlib.Path) -> list:
 
 
 def when(value):
-    """A timestamp as a comparable number (epoch seconds) or None."""
-    value = str(value or "").strip()
+    """A timestamp as a comparable number (epoch seconds) or None. Fractions finer than microseconds
+    are cut so Python 3.9 reads nanosecond stamps too."""
+    value = str(value if value is not None else "").strip()
     try:
-        return float(value)
+        number = float(value)
+        return number if math.isfinite(number) else None
     except ValueError:
         pass
+    value = re.sub(r"(\.\d{6})\d+", r"\1", re.sub(r"Z$", "+00:00", value))
     try:
-        moment = datetime.datetime.fromisoformat(re.sub(r"Z$", "+00:00", value))
+        moment = datetime.datetime.fromisoformat(value)
     except ValueError:
         return None
     if moment.tzinfo is None:
@@ -75,39 +75,12 @@ def when(value):
     return moment.timestamp()
 
 
-def table_rows(text: str, needs: tuple) -> list:
-    """Data rows of the markdown tables whose header has all the `needs` columns, as dicts."""
-    rows, head = [], None
-    for line in text.splitlines():
-        if not line.strip().startswith("|"):
-            head = None
-            continue
-        cells = [c.strip() for c in line.strip().strip("|").split("|")]
-        if head is None:
-            lowered = [c.lower() for c in cells]
-            head = lowered if all(n in lowered for n in needs) else []
-        elif head and not all(re.fullmatch(r":?-+:?", c) for c in cells if c):
-            rows.append(dict(zip(head, cells)))
-    return rows
-
-
 def cmd_env(a) -> int:
-    rows = table_rows(pathlib.Path(a.file).read_text(encoding="utf-8"), ("requirement", "status"))
-    if a.stage != "all":
-        rows = [r for r in rows if r.get("#", "").upper().startswith(STAGE_PREFIX[a.stage])]
+    rows = tables.requirements(pathlib.Path(a.file), a.stage)
     if not rows:
         print(f"! no requirement table (columns Requirement, Status, Evidence) in {a.file}")
         return 1
-    open_ = []
-    for r in rows:
-        status, evidence = r.get("status", "").lower(), r.get("evidence", "")
-        name = f"{r.get('#', '')} {r.get('requirement', '')[:70]}".strip()
-        if status in PROVEN and not evidence:
-            open_.append(f"{name}: marked done without evidence")
-        elif status in NOT_APPLICABLE and not evidence:
-            open_.append(f"{name}: n/a without a reason")
-        elif status not in PROVEN | NOT_APPLICABLE:
-            open_.append(f"{name}: {'not met' if status in ('❌', 'no', 'fail') else 'not checked'}")
+    open_ = tables.unproven(rows)
     for line in open_:
         print(f"! {line}")
     print(f"{len(rows) - len(open_)} of {len(rows)} requirements proven")
@@ -115,7 +88,7 @@ def cmd_env(a) -> int:
 
 
 def expected_stages(path: pathlib.Path) -> list:
-    return [r["stage"].strip("`* ").lower() for r in table_rows(path.read_text(encoding="utf-8"), ("stage",))
+    return [r["stage"].strip("`* ").lower() for r in tables.table_rows(path.read_text(encoding="utf-8"), ("stage",))
             if r.get("stage", "").strip("`* ")]
 
 
@@ -215,9 +188,28 @@ def cmd_sample(a) -> int:
     return 0
 
 
-def decisions_before(path: pathlib.Path, cut: float) -> list:
-    keep = ("ts", "stream", "stage", "action", "inputs")
-    return [tuple(str(r.get(k, "")) for k in keep) for r in read_trace(path) if (when(r.get("ts")) or cut) < cut]
+def numeric(value) -> bool:
+    try:
+        float(str(value))
+        return True
+    except ValueError:
+        return False
+
+
+def decisions_before(path: pathlib.Path, cut: float, at_is_number: bool):
+    """{stream: [decision, ...]} before the cut, the number of rows at or after it, and problems."""
+    keep, out, after, problems = ("ts", "stage", "action", "inputs"), {}, 0, []
+    for n, r in enumerate(read_trace(path), 1):
+        t = when(r.get("ts"))
+        if t is None:
+            problems.append(f"{path}: decision {n} has an unreadable ts {r.get('ts')!r}")
+        elif numeric(r.get("ts")) != at_is_number:
+            problems.append(f"{path}: ts {r.get('ts')!r} and --at are on different clocks (a number and a date)")
+        elif t < cut:
+            out.setdefault(str(r.get("stream", "")), []).append(tuple(str(r.get(k, "")) for k in keep))
+        else:
+            after += 1
+    return out, after, problems[:3]
 
 
 def cmd_truncate(a) -> int:
@@ -225,16 +217,34 @@ def cmd_truncate(a) -> int:
     if cut is None:
         print(f"! cannot read --at {a.at}")
         return 2
-    full, short = decisions_before(pathlib.Path(a.full), cut), decisions_before(pathlib.Path(a.cut), cut)
-    for n, (x, y) in enumerate(zip(full, short), 1):
-        if x != y:
-            print(f"! decision {n} before {a.at} differs: full data {x[2]} {x[3]} ({x[4]}) at {x[0]}, "
-                  f"cut data {y[2]} {y[3]} ({y[4]}) at {y[0]}: something before the cut reads data after it")
-            return 1
-    if len(full) != len(short):
-        print(f"! {len(full)} decisions before {a.at} with the full data, {len(short)} with the cut data")
+    if pathlib.Path(a.full).read_bytes() == pathlib.Path(a.cut).read_bytes():
+        print("! the two traces are the same file content: run once with the full data and once with the data cut at --at")
         return 1
-    print(f"same {len(full)} decisions before {a.at} with the data cut there: no look-ahead across the cut")
+    full, _, bad_full = decisions_before(pathlib.Path(a.full), cut, numeric(a.at))
+    short, after, bad_cut = decisions_before(pathlib.Path(a.cut), cut, numeric(a.at))
+    if bad_full or bad_cut:
+        for problem in bad_full + bad_cut:
+            print(f"! {problem}")
+        return 1
+    total = sum(len(v) for v in full.values())
+    if not total:
+        print(f"! no decision before {a.at} in {a.full}: nothing was compared")
+        return 1
+    for stream in sorted(set(full) | set(short)):
+        x_rows, y_rows = full.get(stream, []), short.get(stream, [])
+        for n, (x, y) in enumerate(zip(x_rows, y_rows), 1):
+            if x != y:
+                where = f" in stream {stream}" if stream else ""
+                print(f"! decision {n}{where} before {a.at} differs: full data {x[1]} {x[2]} ({x[3]}) at {x[0]}, "
+                      f"cut data {y[1]} {y[2]} ({y[3]}) at {y[0]}: something before the cut reads data after it")
+                return 1
+        if len(x_rows) != len(y_rows):
+            print(f"! {len(x_rows)} decisions before {a.at} with the full data, {len(y_rows)} with the cut data"
+                  + (f" in stream {stream}" if stream else ""))
+            return 1
+    if after:
+        print(f"WARN  the cut trace has {after} decisions at or after {a.at}: was the data really cut there?")
+    print(f"same {total} decisions before {a.at} with the data cut there: no look-ahead across the cut")
     return 0
 
 
@@ -244,38 +254,48 @@ def digest(path: pathlib.Path) -> str:
 
 def cmd_repro(a) -> int:
     if not a.command or not a.out:
-        print("! usage: lab.py repro --out FILE [--out FILE ...] -- COMMAND ...")
+        print("! usage: lab.py repro --out FILE [--out FILE ...] [--runs N>=2] -- COMMAND ...")
         return 2
-    runs = []
-    for n in range(a.runs):
-        for f in a.out:  # each run must write its outputs itself; a file left from before proves nothing
-            if pathlib.Path(f).exists():
-                pathlib.Path(f).replace(f"{f}.repro-before")
-        try:
-            done = subprocess.run(a.command, timeout=a.timeout)
-        except subprocess.TimeoutExpired:
-            print(f"! run {n + 1} took longer than {a.timeout} s")
-            return 1
-        if done.returncode:
-            print(f"! run {n + 1} failed with exit code {done.returncode}")
-            return 1
-        runs.append([digest(pathlib.Path(f)) for f in a.out])
-    same = True
-    for i, f in enumerate(a.out):
-        hashes = {r[i] for r in runs}
-        if "" in hashes:
-            print(f"! {f}: not written")
-            same = False
-        elif len(hashes) > 1:
-            print(f"DIFFERENT  {f}")
-            same = False
-        else:
-            print(f"same       {f}  sha256 {runs[0][i][:16]}")
-    for f in a.out:
-        before = pathlib.Path(f"{f}.repro-before")
-        if before.exists():
-            before.unlink()
-    return 0 if same else 1
+    if a.runs < 2:
+        print("! --runs must be at least 2: one run reproduces nothing")
+        return 2
+    outs = [pathlib.Path(f) for f in a.out]
+    kept = {f: pathlib.Path(f"{f}.repro-kept") for f in outs if f.exists()}
+    for f, keep in kept.items():  # the real outputs are put back afterwards, whatever happens
+        f.replace(keep)
+    try:
+        runs = []
+        for n in range(a.runs):
+            for f in outs:  # each run must write its outputs itself
+                if f.exists():
+                    f.unlink()
+            try:
+                done = subprocess.run(a.command, timeout=a.timeout)
+            except subprocess.TimeoutExpired:
+                print(f"! run {n + 1} took longer than {a.timeout} s")
+                return 1
+            if done.returncode:
+                print(f"! run {n + 1} failed with exit code {done.returncode}")
+                return 1
+            runs.append([digest(f) for f in outs])
+        same = True
+        for i, f in enumerate(outs):
+            hashes = {r[i] for r in runs}
+            if "" in hashes:
+                print(f"! {f}: not written")
+                same = False
+            elif len(hashes) > 1:
+                print(f"DIFFERENT  {f}")
+                same = False
+            else:
+                print(f"same       {f}  sha256 {runs[0][i][:16]}")
+        return 0 if same else 1
+    finally:
+        for f in outs:
+            if f in kept:
+                kept[f].replace(f)
+            elif f.exists():
+                f.unlink()
 
 
 def with_lab(sub, name: str):

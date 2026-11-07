@@ -97,6 +97,13 @@ class Trace(LabCase):
         self.assertIn("1 decisions do not say what they looked at", out)
         self.assertIn("no reason column", out)
 
+    def test_nanosecond_stamps_read_and_nan_does_not(self):
+        out = self.lab("trace", self.write("ns.tsv", "ts\tstage\taction\tinputs\tinputs_ts\n"
+                       "2026-03-02T10:00:00.123456789\tsignal\tlong\tx\t2026-03-02T10:00:00.223456789\n"), expect=1)
+        self.assertIn("look-ahead", out)
+        out = self.lab("trace", self.write("nan.tsv", "ts\tstage\taction\tinputs\tinputs_ts\nnan\tsignal\tlong\tx\t1\n"), expect=1)
+        self.assertIn("unreadable ts", out)
+
     def test_jsonl_and_numeric_time(self):
         rows = [{"ts": 1, "stage": "predict", "action": "0.7", "inputs": "f1", "inputs_ts": 2}]
         out = self.lab("trace", self.write("t.jsonl", "\n".join(json.dumps(r) for r in rows)), expect=1)
@@ -138,11 +145,16 @@ class Repro(LabCase):
         noisy = self.write("noisy.py", "import random\nopen('out.tsv', 'w').write(str(random.random()))\n")
         self.assertIn("DIFFERENT  out.tsv", self.lab("repro", "--out", "out.tsv", "--", sys.executable, noisy, expect=1))
 
-    def test_a_file_left_from_before_is_not_a_reproduction(self):
+    def test_a_file_left_from_before_is_not_a_reproduction_and_survives(self):
         self.write("out.tsv", "old\n")
         skip = self.write("skip.py", "import os\nif not os.path.exists('out.tsv'):\n    pass\n")
         self.assertIn("not written", self.lab("repro", "--out", "out.tsv", "--", sys.executable, skip, expect=1))
-        self.assertFalse((self.dir / "out.tsv.repro-before").exists())
+        self.assertEqual((self.dir / "out.tsv").read_text(), "old\n")
+        noisy = self.write("noisy2.py", "import random\nopen('out.tsv', 'w').write(str(random.random()))\n")
+        self.lab("repro", "--out", "out.tsv", "--", sys.executable, noisy, expect=1)
+        self.assertEqual((self.dir / "out.tsv").read_text(), "old\n")
+        self.assertEqual(sorted(p.name for p in self.dir.glob("out.tsv*")), ["out.tsv"])
+        self.assertIn("at least 2", self.lab("repro", "--out", "out.tsv", "--runs", "1", "--", sys.executable, noisy, expect=2))
 
     def test_failing_command_and_missing_output(self):
         self.assertIn("failed", self.lab("repro", "--out", "x", "--", sys.executable, "-c", "raise SystemExit(3)", expect=1))
@@ -158,11 +170,11 @@ class Protocol(LabCase):
         self.row("E1", "net_per_trade > 0 & trades >= 30")
         self.write("research/toy/KB/expect/E1.md", "| Stage | Should do |\n|---|---|\n| signal | long on both up |\n")
 
-    def row(self, id, criterion, decision="", result=""):
+    def row(self, id, criterion, decision="", result="", review=""):
         path = self.labdir / "KB" / "EXPERIMENTS.tsv"
         head = (ROOT / "skills" / "research" / "EXPERIMENTS-TEMPLATE.tsv").read_text()
         rows = path.read_text() if path.exists() else head
-        line = "\t".join([id, "1", "H1.1", "toy", "+0.1 per trade", criterion, "abc", "seed7", "7", result, decision, "", ""])
+        line = "\t".join([id, "1", "H1.1", "toy", "+0.1 per trade", criterion, "abc", "seed7", "7", result, decision, "", review])
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(rows + line + "\n")
 
@@ -173,6 +185,20 @@ class Protocol(LabCase):
         out, extra = self.labdir / "results" / id, ["--again"] if again else []
         return self.p("run", id, "--code", str(TOY), *extra, "--", sys.executable, str(TOY), str(out), *flags, expect=expect)
 
+    def passed(self, id="E1"):
+        self.p("register", id)
+        self.run_toy(id)
+        self.p("judge", id)
+
+    def proven_verification(self):
+        rows = "".join(f"| V{i} | requirement {i} | ✅ | evidence {i} |\n" for i in range(1, 6))
+        self.write("research/toy/KB/ENVIRONMENT.md", "| # | Requirement | Status | Evidence |\n|---|---|---|---|\n" + rows)
+
+    def holdout_metrics(self, *flags):
+        out = self.labdir / "sealed" / "E1"
+        subprocess.run([sys.executable, str(TOY), str(out), *flags], check=True)
+        return str(out / "metrics.tsv")
+
     def test_register_needs_a_row_an_expectation_and_a_readable_criterion(self):
         self.assertIn("no row E9", self.p("register", "E9", expect=1))
         self.row("E2", "net looks good")
@@ -182,10 +208,12 @@ class Protocol(LabCase):
         self.assertIn("no KB/expect/E3.md", self.p("register", "E3", expect=1))
         self.assertIn("registered E1", self.p("register", "E1"))
         self.assertIn("registered already", self.p("register", "E1", expect=1))
+        self.assertIn("letters, digits", self.p("register", "../esc", expect=1))
 
     def test_run_judge_and_check(self):
         self.assertIn("not registered", self.run_toy("E1", expect=1))
         self.p("register", "E1")
+        self.assertIn("--code names the files", self.p("run", "E1", "--", sys.executable, "-c", "pass", expect=1))
         self.assertIn("E1: exit 0", self.run_toy("E1"))
         self.assertTrue((self.labdir / "results" / "E1" / "DONE").exists())
         self.assertEqual(json.loads((self.labdir / "results" / "E1" / "RUN.json").read_text())["exit"], 0)
@@ -206,48 +234,103 @@ class Protocol(LabCase):
         path.write_text(path.read_text().replace("net_per_trade > 0", "net_per_trade > -1"))
         self.assertIn("pass_criterion changed after registration", self.p("check", expect=1))
 
-    def test_keep_without_pass_and_changed_metrics_and_a_tampered_ledger(self):
+    def test_keep_needs_a_pass_on_the_latest_run_and_the_reviewers_pass(self):
+        self.passed()
+        self.row("E1", "net_per_trade > 0 & trades >= 30", decision="KEEP BEST")
+        self.assertIn("without the reviewer's PASS", self.p("check", expect=1))
+        self.row("E1", "net_per_trade > 0 & trades >= 30", decision="KEEP BEST", review="R01 PASS")
+        self.assertIn("1 PASS", self.p("check"))
+        self.run_toy("E1", "--honest", again=True)  # a new attempt that nobody judged
+        self.assertIn("without a PASS from lab.py judge on its latest run", self.p("check", expect=1))
+        self.assertIn("latest run was not judged PASS", self.p("holdout", "open", "E1", expect=1))
+
+    def test_changed_metrics_multi_row_and_non_finite_values_are_refused(self):
         self.p("register", "E1")
         self.run_toy("E1", "--honest")
         metrics = self.labdir / "results" / "E1" / "metrics.tsv"
         metrics.write_text(metrics.read_text().replace("-0.245", "0.245"))
         self.assertIn("missing or changed after the run", self.p("judge", "E1", expect=1))
-        self.row("E1", "net_per_trade > 0 & trades >= 30", decision="KEEP BEST")
-        self.assertIn("without a PASS from lab.py judge", self.p("check", expect=1))
-        ledger = self.labdir / "LEDGER.jsonl"
-        lines = ledger.read_text().splitlines()
-        ledger.write_text("\n".join([lines[0].replace("abc", "xyz")] + lines[1:]) + "\n")
-        self.assertIn("ledger line 2 (run_start E1) does not follow line 1", self.p("check", expect=1))
+        for text, said in (("seed\tnet_per_trade\ttrades\n0\t5\t100\n1\t-9\t100\n", "rows of values"),
+                           ("net_per_trade\ttrades\ninf\t100\n", "no finite value for 'net_per_trade'")):
+            script = self.write(f"w{len(said)}.py", f"open({str(metrics)!r}, 'w').write({text!r})\n")
+            self.p("run", "E1", "--code", script, "--again", "--", sys.executable, script)
+            self.assertIn(said, self.p("judge", "E1", expect=1))
+        script = self.write("long.py", f"open({str(metrics)!r}, 'w').write('metric\\tvalue\\nnet_per_trade\\t0.5\\ntrades\\t40\\n')\n")
+        self.p("run", "E1", "--code", script, "--again", "--", sys.executable, script)
+        self.assertIn("PASS", self.p("judge", "E1"))
 
     def test_a_crash_is_judged_crash(self):
         self.p("register", "E1")
-        self.p("run", "E1", "--", sys.executable, "-c", "raise SystemExit(3)", expect=3)
+        script = self.write("crash.py", "raise SystemExit(3)\n")
+        self.p("run", "E1", "--code", script, "--", sys.executable, script, expect=3)
         self.assertIn("CRASH", self.p("judge", "E1", expect=1))
 
-    def test_holdout_needs_a_pass_has_one_budget_and_is_spent_by_a_failure(self):
+    def test_the_ledger_catches_edits_a_deleted_last_line_and_bad_lines(self):
+        self.passed()
+        ledger = self.labdir / "LEDGER.jsonl"
+        lines = ledger.read_text().splitlines()
+        ledger.write_text("\n".join(lines[:-1]) + "\n")
+        self.assertIn("the end of the ledger was edited or removed", self.p("check", expect=1))
+        ledger.write_text("\n".join([lines[0].replace("abc", "xyz")] + lines[1:]) + "\n")
+        self.assertIn("ledger line 2 (run_start E1) does not follow line 1", self.p("check", expect=1))
+        ledger.write_text("\n".join(lines[:1] + ["not json", "[1, 2]"] + lines[1:]) + "\n")
+        out = self.p("check", expect=1)
+        self.assertIn("line 2 is not a ledger entry", out)
+        self.assertNotIn("Traceback", out)
+
+    def test_odd_characters_in_a_command_do_not_break_the_ledger(self):
+        self.p("register", "E1")
+        out = self.labdir / "results" / "E1"
+        self.p("run", "E1", "--code", str(TOY), "--", sys.executable, str(TOY), str(out), "a b\x0cc")
+        self.assertIn("E1: PASS", self.p("judge", "E1"))
+        self.assertIn("1 registered", self.p("check"))
+
+    def test_concurrent_appends_keep_the_chain(self):
+        code = ("import sys, pathlib; sys.path.insert(0, sys.argv[1]); from labkit.ledger import Ledger; "
+                "[Ledger(pathlib.Path(sys.argv[2])).append('note', id=sys.argv[3]) for _ in range(5)]")
+        procs = [subprocess.Popen([sys.executable, "-c", code, str(LAB.parent), str(self.labdir), f"P{i}"])
+                 for i in range(8)]
+        for proc in procs:
+            proc.wait()
+        self.assertEqual([e for e in (self.labdir / "LEDGER.jsonl").read_text().splitlines()].__len__(), 40)
+        self.assertIn("0 registered", self.p("check"))
+
+    def test_holdout_is_bound_to_a_judged_candidate_and_spent_by_a_failure(self):
         self.p("register", "E1")
         self.run_toy("E1")
         self.assertIn("not judged PASS", self.p("holdout", "open", "E1", expect=1))
         self.p("judge", "E1")
+        self.assertIn("verification requirements are not proven", self.p("holdout", "open", "E1", expect=1))
+        self.proven_verification()
+        self.assertIn("1 to 3 looks", self.p("holdout", "open", "E1", "--budget", "1000", expect=1))
         self.assertIn("look 1 of 2 is open", self.p("holdout", "open", "E1", "--budget", "2"))
         self.assertIn("still open", self.p("holdout", "open", "E1", expect=1))
-        holdout = self.dir / "holdout"
-        self.lab("repro", "--out", str(holdout / "metrics.tsv"), "--runs", "1", "--",
-                 sys.executable, str(TOY), str(holdout), "--honest")
-        self.assertIn("E1 on the holdout: FAIL", self.p("holdout", "close", "E1", "--metrics", str(holdout / "metrics.tsv"), expect=1))
+        self.assertIn("looked at on the holdout", self.run_toy("E1", again=True, expect=1))
+        sim = str(self.labdir / "results" / "E1" / "metrics.tsv")
+        self.assertIn("written by the holdout run", self.p("holdout", "close", "E1", "--metrics", sim, expect=1))
+        copy = self.labdir / "sealed" / "copy.tsv"
+        copy.parent.mkdir(parents=True, exist_ok=True)
+        copy.write_bytes(pathlib.Path(sim).read_bytes())
+        self.assertIn("output of a simulation run", self.p("holdout", "close", "E1", "--metrics", str(copy), expect=1))
+        metrics = self.holdout_metrics("--honest")
+        self.assertIn("E1 on the holdout: FAIL", self.p("holdout", "close", "E1", "--metrics", metrics, expect=1))
         self.assertIn("the holdout is spent", self.p("holdout", "open", "E1", expect=1))
-        self.assertIn("fixed at 2", self.p("holdout", "open", "E1", "--budget", "5", expect=1))
+        self.assertIn("fixed at 2", self.p("holdout", "open", "E1", "--budget", "3", expect=1))
         self.assertIn("look 1: E1 FAIL", self.p("holdout", "status"))
         self.assertIn("1 holdout look(s)", self.p("check"))
 
     def test_the_brief_traces_every_number_to_the_record(self):
-        self.p("register", "E1")
-        self.run_toy("E1")
-        self.p("judge", "E1")
-        brief = self.write("research/toy/BRIEF.md", "E1 earned 0.039 per trade over 43 trades, 1.69 in all (3.9%).\n")
-        self.assertIn("3 of 3 numbers trace", self.p("brief", brief))
-        self.write("research/toy/BRIEF.md", "E1 earned 0.44 per trade.\n")
-        self.assertIn("line 1: 0.44 is in no metrics file", self.p("brief", brief, expect=1))
+        self.passed()
+        brief = self.write("research/toy/BRIEF.md", "On 2026-11-07, E1 earned 0.039 per trade over 43 trades, "
+                           "1.69 in all (3.9%), in 1 trial; see section 2.\n")
+        self.assertIn("4 of 4 numbers trace", self.p("brief", brief))
+        self.write("research/toy/BRIEF.md", "E1 earned 0.44 per trade over 47 trades; we expected 0.1.\n")
+        out = self.p("brief", brief, expect=1)
+        for token in ("0.44", "47", "0.1"):
+            self.assertIn(f": {token} is in no metrics file", out)
+        self.write("research/toy/KB/PROGRAM.md", "Costs: spread 0.50, fees 1,250.75 a month.\n")
+        self.write("research/toy/BRIEF.md", "Costs as planned: spread 0.50 and 1,250.75 in fees.\n")
+        self.assertIn("2 of 2 numbers trace", self.p("brief", brief))
 
 
 class ToyResearch(LabCase):
@@ -263,6 +346,23 @@ class ToyResearch(LabCase):
         out = self.lab("truncate", self.runs("honest", "--honest"), self.runs("hcut", "--honest", "--bars", "200"),
                        "--at", "2026-03-02T12:50:00")
         self.assertIn("same 195 decisions", out)
+
+    def test_truncation_does_not_pass_without_comparing(self):
+        full = self.runs("full")
+        self.assertIn("same file content", self.lab("truncate", full, full, "--at", "2026-03-02T12:50:00", expect=1))
+        cut = self.runs("cut", "--bars", "200")
+        self.assertIn("no decision before", self.lab("truncate", full, cut, "--at", "2026-03-02T09:00:00", expect=1))
+        self.assertIn("different clocks", self.lab("truncate", full, cut, "--at", "1772456400", expect=1))
+        a = self.write("a.tsv", "ts\tstage\taction\tinputs\n0\tsignal\tlong\tx=9\nbad\tsignal\tflat\tx\n")
+        b = self.write("b.tsv", "ts\tstage\taction\tinputs\n0\tsignal\tlong\tx=1\n")
+        self.assertIn("unreadable ts 'bad'", self.lab("truncate", a, b, "--at", "2", expect=1))
+        a = self.write("a.tsv", "ts\tstage\taction\tinputs\n0\tsignal\tlong\tx=9\n")
+        self.assertIn("decision 1 before 2 differs", self.lab("truncate", a, b, "--at", "2", expect=1))
+
+    def test_streams_are_compared_separately(self):
+        a = self.write("a.tsv", "ts\tstream\tstage\taction\tinputs\n1\tES\ts\tlong\tx\n1\tNQ\ts\tflat\ty\n")
+        b = self.write("b.tsv", "ts\tstream\tstage\taction\tinputs\n1\tNQ\ts\tflat\ty\n1\tES\ts\tlong\tx\n")
+        self.assertIn("same 2 decisions", self.lab("truncate", a, b, "--at", "5"))
 
 
 if __name__ == "__main__":

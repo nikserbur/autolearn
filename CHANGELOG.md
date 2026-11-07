@@ -41,6 +41,19 @@ holdout reusable per candidate and the brief checked against itself.
   prices when looking for rare decisions.
 - S6 asks for every decision in the trace, doing nothing included.
 
+- Hardened after an independent review of the ledger code, each case with a test: appends take a
+  lock (parallel runs no longer break the chain); `LEDGER.head` catches an edited or deleted last
+  line; unreadable lines and U+2028 in a command no longer crash `check`; a judgement is bound to
+  the run it judged, so a later `--again` needs a new judgement before KEEP or a holdout look, and a
+  candidate looked at cannot run again; `holdout close` takes only a file under `sealed/` that is
+  not a simulation output, and `open` refuses until V1-V5 are proven and caps the budget at 3;
+  `metrics.tsv` with several rows, `inf` or `nan` is refused; `run` needs `--code`; ids are
+  checked; `brief` also checks whole numbers, reads thousands separators, and no longer takes
+  numbers from the journal (seeds and expected effects backed made-up results); `truncate`
+  compares stream by stream and fails when it compared nothing, met an unreadable time, or got the
+  same file twice; `repro` puts the real outputs back and needs at least two runs; KEEP needs the
+  reviewer's PASS in the row's review cell; nanosecond timestamps read on Python 3.9.
+
 ### Removed
 - `lab.py holdout <file> log` and `KB/HOLDOUT.tsv`: looks are ledger entries now.
 
