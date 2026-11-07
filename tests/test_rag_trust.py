@@ -374,16 +374,18 @@ class GitignoreUpgrade(unittest.TestCase):
     def tearDown(self):
         self.tmp.cleanup()
 
+    # No background `git maintenance` after a commit: it races rmtree on .git (maintenance.lock)
+    ENV = dict(os.environ, GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@example.com",
+               GIT_COMMITTER_NAME="t", GIT_COMMITTER_EMAIL="t@example.com", GIT_CONFIG_COUNT="2",
+               GIT_CONFIG_KEY_0="maintenance.auto", GIT_CONFIG_VALUE_0="false",
+               GIT_CONFIG_KEY_1="gc.auto", GIT_CONFIG_VALUE_1="0")
+
     def git(self, *args):
-        env = dict(os.environ, GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@example.com",
-                   GIT_COMMITTER_NAME="t", GIT_COMMITTER_EMAIL="t@example.com")
-        return subprocess.run(["git", "-C", str(self.home), *args], capture_output=True, text=True, env=env).stdout
+        return subprocess.run(["git", "-C", str(self.home), *args], capture_output=True, text=True, env=self.ENV).stdout
 
     def upgrade(self):
-        env = dict(os.environ, GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@example.com",
-                   GIT_COMMITTER_NAME="t", GIT_COMMITTER_EMAIL="t@example.com")
         subprocess.run([sys.executable, str(ROOT / "hooks" / "_seed.py"), str(self.home), str(self.templates)],
-                       capture_output=True, text=True, env=env, check=True)
+                       capture_output=True, text=True, env=self.ENV, check=True)
 
     def test_an_old_data_directory_gets_the_missing_lines_and_keeps_its_own(self):
         self.upgrade()
