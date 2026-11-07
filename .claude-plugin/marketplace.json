@@ -4,29 +4,29 @@
     "name": "Nikita Burakov",
     "url": "https://github.com/nikserbur"
   },
-  "description": "research-lab: a Claude Code harness that learns from your feedback, reviews and escaped bugs.",
+  "description": "research-lab: hypotheses, simulations, an independent reviewer and a knowledge base for Claude Code.",
   "plugins": [
     {
       "name": "research-lab",
       "source": "./",
-      "description": "Self-learning harness for Claude Code: multi-agent delivery pipeline with a fresh-context merge gate, evidence-backed lessons, auto-grown reviewers, a hypothesis-driven research loop with an independent reviewer, a self-routing local knowledge base (hybrid search, GraphRAG, corrective RAG, contextual retrieval, reranking, incremental updates) and a skill/MCP gap radar.",
-      "category": "development",
+      "description": "A research lab for Claude Code: hypotheses run in a simulation environment with written requirements, an independent reviewer compares expected with actual behaviour stage by stage and turns every discrepancy into the next hypothesis, a candidate is judged once on a holdout, and a self-routing local knowledge base (hybrid search, GraphRAG, corrective RAG, contextual retrieval, reranking, incremental updates) keeps every result for later questions in any project.",
+      "category": "productivity",
       "license": "MIT",
       "tags": [
-        "self-learning",
-        "code-review",
+        "research",
+        "experiments",
         "knowledge-base",
-        "subagents",
-        "workflow"
+        "rag",
+        "subagents"
       ],
       "keywords": [
         "claude-code",
-        "self-learning",
-        "continual-learning",
-        "context-router",
-        "merge-gate",
-        "subagents",
-        "tdd"
+        "research",
+        "hypothesis-testing",
+        "backtesting",
+        "machine-learning",
+        "knowledge-base",
+        "rag"
       ]
     }
   ]

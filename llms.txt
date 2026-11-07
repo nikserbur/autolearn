@@ -1,18 +1,17 @@
 # research-lab
 
-> A self-learning harness for Claude Code: a 13-agent delivery pipeline (plan, critique, TDD under a verify gate, fresh-context review and merge gate) that turns user corrections, review findings and escaped bugs into evidence-backed lessons, new reviewer agents and new skills, a hypothesis-driven research loop with an independent reviewer, plus a self-routing local knowledge base (hybrid search, GraphRAG, corrective RAG, contextual retrieval, reranking, incremental updates) and a topic-map router and a skill/MCP gap radar. Python standard library only; installs as a Claude Code plugin or via install.sh.
+> A research lab for Claude Code. Two modes over one local knowledge base: the background mode (knowledge-search, knowledge-ingest and three hooks) answers from what is known; the direct mode (/research with two subagents) runs hypotheses in a simulation environment with written requirements, pre-registers the expected behaviour of every stage, has an independent reviewer compare expected with actual and turn discrepancies into the next hypotheses, judges a frozen candidate once on a holdout, and promotes durable results to the knowledge base. Retrieval is self-routing RAG (hybrid search, GraphRAG, corrective RAG, contextual retrieval, reranking, incremental updates). Python standard library only; installs as a Claude Code plugin or via install.sh.
 
 ## Start here
-- [README](README.md): what it does, quick start, components
-- [Learning loop](docs/learning-loop.md): signals, lessons, promotion ladder, "missed a bug? add a reviewer"
-- [Knowledge router](docs/knowledge-router.md): building the knowledge base with its router, budgets
-- [Pipeline](docs/pipeline.md): /feature roles, modes and artifacts
-- [Hooks](docs/hooks.md): every hook, its event, scope and environment variables
-- [Components](docs/components.md): every agent, skill, hook and script
-- [Comparison](docs/comparison.md): dated comparison with related projects
+- [README](README.md): the two modes, a research round, environments, expected against actual, retrieval, install
+- [Research skill](skills/research/SKILL.md): the loop step by step, the model-training protocol
+- [Source rules](skills/knowledge-ingest/SOURCES.md): collecting knowledge and using the web
+- [Knowledge router](docs/knowledge-router.md): building the knowledge base, retrieval, measurements
+- [Hooks](docs/hooks.md): every hook, its event and environment variables
+- [Components](docs/components.md): every skill, agent, hook and script
 
 ## Components
-- [agents/](agents/): al-planner, al-plan-critic, al-code-scout, al-docs-scout, al-implementer, al-test-writer, al-code-reviewer, al-doc-writer, al-merge-gate, al-lessons-keeper, al-escape-analyst, al-skill-scout, rl-hypothesis-reviewer
-- [skills/](skills/): feature, research, merge-check, learn, retro, skill-radar, knowledge-search, knowledge-ingest, colleague-message, pr-description, git-handoff
-- [hooks/](hooks/): check_secrets, capture_feedback, session_brief, verify_gate, test_output_filter, planner_guard
-- [templates/](templates/): CLAUDE.md routing table, topic map, required docs, lessons, message style
+- [skills/](skills/): research, knowledge-search, knowledge-ingest
+- [agents/](agents/): rl-hypothesis-reviewer, rl-source-scout
+- [hooks/](hooks/): session_brief, kb_autoindex, check_secrets
+- [templates/](templates/): CLAUDE.md routing table, topic map

@@ -3,8 +3,56 @@
 All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/). Bump `version` in `.claude-plugin/plugin.json`
-and `.claude-plugin/marketplace.json` together with every release, or plugin users will not
-receive the update.
+with every release, or plugin users will not receive the update. Up to 0.3.1 the project was
+called autolearn.
+
+## [0.4.0] - 2026-11-07
+
+autolearn is now **research-lab**. The project narrows to research and the knowledge base, in two
+modes over one index: the background mode answers from what is known, and the direct mode,
+`/research`, produces new knowledge with subagents.
+
+### Added
+- Simulation and verification environments for `/research` (`ENVIRONMENT-TEMPLATE.md`):
+  requirements S1-S7 (point in time, explicit conservative costs, reproducible, isolated,
+  controls, decision trace, units) and V1-V5 (holdout apart, frozen candidate, independent run,
+  same environment, counted looks), each proven with evidence before round 1.
+- Expected behaviour per stage, written before every run (`EXPECT-TEMPLATE.md`).
+- `rl-hypothesis-reviewer` compares expected with actual stage by stage on sampled decisions,
+  looks sideways at what moved without being tested, and turns each discrepancy into a
+  hypothesis; mode `verify` judges a frozen candidate once on the holdout (PASS, FAIL, SPOILED).
+- `rl-source-scout` collects what is known (knowledge base, code, papers, official docs) with a
+  source, date and status per fact.
+- `skills/research/scripts/lab.py`: `env`, `trace` (look-ahead, time order, blind decisions,
+  stages against the expectation), `sample`, `holdout`, `repro`.
+- `skills/knowledge-ingest/SOURCES.md`: one set of rules for collecting knowledge and using the
+  web in both modes (read-only, no internal data in queries, sources dated and ranked).
+- A model-training protocol in the research skill: time splits, baselines, one change per
+  experiment, seeds and spread, learning curves, frozen thresholds.
+
+### Changed
+- Renamed: plugin, repository, data directory (`~/.claude/research-lab`), hook namespace,
+  environment variables (`AUTOLEARN_*` -> `RESEARCH_LAB_*`), agent prefix (`rl-`);
+  `kb-router` -> `knowledge-search`, `kb-ingest` -> `knowledge-ingest`.
+- The retrieval engine (`kb_rag.py`, `ragkit/`) moved from `research` to `knowledge-search`;
+  research calls it from there. The engine itself is unchanged.
+- `/research` promotes durable facts through the knowledge-ingest rules instead of writing to
+  the global base on its own.
+- The session brief carries knowledge-base pointers only.
+
+### Removed
+- The delivery pipeline: `/feature` and its ten agents, `/learn`, `/retro`, `/merge-check`,
+  `/skill-radar`, `colleague-message`, `pr-description`, `git-handoff`, the feedback capture,
+  verify gate, test-output filter and planner guard hooks, `install.sh --deny-push`. Tag
+  `v0.3.1` still has them.
+- The 24-question golden set on this repo's docs: the docs it asked about are gone.
+
+### Upgrading
+- Plugin: remove the autolearn plugin and install research-lab; the first session moves
+  `~/.claude/autolearn` (with the model virtualenv) to `~/.claude/research-lab`.
+- Install script: the new `install.sh` moves the old agents, skills and hooks to a backup,
+  restores files of yours the old install had replaced, removes the old hooks from
+  `settings.json`, swaps the old `CLAUDE.md` block and moves the data directory.
 
 ## [0.3.1] - 2026-11-06
 

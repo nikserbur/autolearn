@@ -6,12 +6,11 @@ set -euo pipefail
 repo="${1:?usage: $0 <owner>/research-lab}"
 
 gh repo edit "$repo" \
-  --description "Missed a bug? It grows a reviewer for it. A self-learning Claude Code plugin: plan, TDD, review and merge-gate pipeline that turns your corrections and escaped bugs into lessons, tests and new reviewer agents, plus a routed local knowledge base." \
+  --description "A research lab for Claude Code: hypotheses in a simulation with written requirements, an independent reviewer that turns every gap between expected and actual behaviour into the next hypothesis, one judged look at a holdout, and a self-routing local knowledge base (RAG)." \
   --homepage "https://github.com/$repo#readme" \
   --enable-issues
 
-# GitHub allows up to 20 topics; chosen from the most frequent topics of popular Claude Code repos
-# plus this project's niche (self-learning, memory, knowledge base, code review).
+# GitHub allows up to 20 topics: the Claude Code ones people search for, plus this project's niche.
 gh repo edit "$repo" \
   --add-topic claude-code \
   --add-topic claude \
@@ -19,19 +18,19 @@ gh repo edit "$repo" \
   --add-topic claude-code-plugin \
   --add-topic claude-skills \
   --add-topic agent-skills \
-  --add-topic claude-code-hooks \
   --add-topic subagents \
-  --add-topic multi-agent \
   --add-topic ai-agents \
-  --add-topic agentic-coding \
-  --add-topic coding-agents \
-  --add-topic self-learning \
-  --add-topic continual-learning \
-  --add-topic ai-memory \
-  --add-topic agent-memory \
+  --add-topic research \
+  --add-topic experiments \
+  --add-topic hypothesis-testing \
+  --add-topic backtesting \
+  --add-topic machine-learning \
+  --add-topic model-training \
   --add-topic knowledge-base \
-  --add-topic context-engineering \
-  --add-topic code-review \
-  --add-topic tdd
+  --add-topic rag \
+  --add-topic graphrag \
+  --add-topic hybrid-search \
+  --add-topic agent-memory \
+  --add-topic context-engineering
 
 echo "done: https://github.com/$repo"

@@ -1,62 +1,38 @@
 # Components
 
-Everything research-lab ships, with the model each agent runs on and the event each hook listens to.
-Design notes: [pipeline](pipeline.md), [learning loop](learning-loop.md), [knowledge router](knowledge-router.md), [hooks](hooks.md).
+Everything research-lab ships. Design notes: [knowledge router](knowledge-router.md), [hooks](hooks.md),
+and the [research skill](../skills/research/SKILL.md) itself.
+
+## Skills
+
+| Skill | Mode | Trigger | What it does |
+|---|---|---|---|
+| `research` | direct | "research", "train a model", "test hypotheses", "what is known about X", or `/research` | Rounds of pre-registered hypotheses in a simulation environment with written requirements; expected behaviour per stage before every run; an independent reviewer compares expected with actual and turns discrepancies into the next hypotheses; one judged look at the holdout per candidate; conclusions in a research KB; non-blocking check-ins |
+| `knowledge-search` | background | domain questions, "did we try", "what did we decide" | Retrieves (RAG) from the knowledge base and every research KB, ≤ 8 KB with `path:line`, acts on the verdict (answer, rephrase and fill the gap, or go to the sources), checks drafts with `verify`; the topic map as the curated route; logs hits and misses |
+| `knowledge-ingest` | background | "remember this", a miss, the end of a research | Distills sources into chunk-friendly pages **and** registers them in the router, lints, re-indexes, commits. Holds [SOURCES.md](../skills/knowledge-ingest/SOURCES.md), the collection and web rules of both modes |
 
 ## Agents
 
 | Agent | Model | Role |
 |---|---|---|
-| `al-docs-scout` | Sonnet | Routes the task through the topic map, repo docs and doc MCPs; writes `CONTEXT.md` (≤ 8 KB) with the applicable checklist items |
-| `al-code-scout` | Sonnet | Maps entry points, signatures, tests and verify commands into `CODEMAP.md` (≤ 10 KB) so the planner does not burn turns searching |
-| `al-planner` | Opus (deep: strongest available, auto-fallback) | Writes `PLAN.md`: tasks with interfaces, boundaries, a red test and a verify command each; network-guarded, experiment-budgeted |
-| `al-plan-critic` | Opus | Fresh-context skeptic: coverage, truthfulness (grep, not faith), lessons not repeated, every checklist item closed |
-| `al-implementer` | Sonnet | One task: red test → code → green run; a Stop hook will not let it finish until `verify` passes |
-| `al-test-writer` | Sonnet | Fills uncovered Review Focus items; mutation-checks every new test |
-| `al-code-reviewer` | Opus | Mode A: high-signal review of the diff. Mode B: tries to *refute* another reviewer's finding |
-| `al-doc-writer` | Sonnet | Docs for what is really in the diff, nothing invented |
-| `al-merge-gate` | Opus, max effort | "Can this be merged?" with *no* plan or session context, like a tech lead seeing it cold |
-| `al-lessons-keeper` | Opus | Turns run artifacts and captured feedback into evidence-backed lessons; drafts proposals; keeps stats |
-| `al-escape-analyst` | Opus | Root-causes an escaped bug to a pipeline stage and drafts the guard, up to a full new reviewer agent |
-| `rl-hypothesis-reviewer` | Opus | Fresh-context reviewer of a research loop: critiques a round before compute, then checks leakage and costs, recomputes headline numbers, decomposes causes, searches papers, forums, local code and the KB, ranks next tests |
-| `al-skill-scout` | Sonnet | Scouts skills, plugins and MCP servers for a gap; reads and trust-grades every candidate; installs nothing |
-
-## Skills
-
-| Skill | Trigger | What it does |
-|---|---|---|
-| `/feature` | manual | The multi-agent delivery pipeline (light / deep / two-stage) |
-| `/research` | "research", "test hypotheses", "keep iterating" | Rounds of pre-registered hypotheses -> critique -> runs -> independent review -> conclusions in a research KB -> next round; non-blocking check-ins |
-| `/merge-check` | "can we merge?" | Fresh-context pre-review; findings feed `/learn` |
-| `/learn` | manual or prompted | Inbox → lessons → proposals → you approve → applied |
-| `/retro` | "a bug slipped through" | Escaped-defect analysis → regression test, hook, rule, or a new reviewer |
-| `/skill-radar` | manual, monthly | Inventory + session mining + ecosystem scouting → install / build / skip |
-| `knowledge-search` | auto, on domain questions | Retrieves (RAG) from the KB and research folders, ≤ 8 KB with `path:line`, acts on the verdict (answer, rephrase and fill the gap, or go to the web), checks drafts with `verify`; topic map as the curated route; logs hits and misses |
-| `knowledge-ingest` | "remember this", router miss | Distills sources into chunk-friendly pages **and** registers them in the router, lints, re-indexes, commits |
-| `colleague-message` | "draft a message to..." | Drafts in your voice; learns from your edits and approvals; never sends |
-| `pr-description` | "describe the PR" | What / why / verification / known limitations; closing keyword only in the last PR |
-| `git-handoff` | team repos | Read-only git; prints the exact commands for you to run |
+| `rl-hypothesis-reviewer` | Opus | Fresh-context skeptic of the research loop. `critique`: attacks a round before compute. `review`: leakage, costs, simulation assumptions, recomputed numbers, expected against actual stage by stage on sampled decisions, sideways findings, causes, sources, ranked next tests. `verify`: one run of a frozen candidate on the holdout, logged, PASS / FAIL / SPOILED |
+| `rl-source-scout` | Sonnet | Collects what is known for the loop: the knowledge base, the project's code and docs, then papers and official docs on the web; every fact with a source, a date and a status, into `KB/sources/` |
 
 ## Hooks
 
 | Hook | Event | Purpose |
 |---|---|---|
-| `check_secrets.py` | PreToolUse (Bash) | Denies `git commit` when staged lines look like keys or tokens |
-| `capture_feedback.py` | UserPromptSubmit | Regex-tags corrections, rules, approvals and escaped bugs in 15 languages into the inbox; silent, local, secrets redacted |
+| `session_brief.py` | SessionStart | Injects pointers and counts (< 700 chars), never content; seeds the data directory in plugin mode |
 | `kb_autoindex.py` | PostToolUse (Write / Edit) | A write to the knowledge base or any `KB/` folder starts a background re-embedding of the changed files; never blocks |
-| `session_brief.py` | SessionStart | Injects pointers and counts (< 700 chars), never content: rules, repo lessons, inbox, proposals, radar age |
-| `verify_gate.py` | Stop / SubagentStop | Blocks `al-implementer` / `al-test-writer` from finishing until the task's verify command passes; releases them as FAILED after the budget; ignores stale task files |
-| `test_output_filter.py` | PreToolUse (Bash) | Sends subagents' test commands back with the exact filtered form to run, so they see failures and the summary, not 5,000 dots |
-| `planner_guard.py` | PreToolUse (Bash) | Planner: no network / cloud / prod data / installs; at most 3 experiments, each with a 60 s timeout; reading code is never limited |
+| `check_secrets.py` | PreToolUse (Bash) | Denies `git commit` when staged lines look like keys or tokens |
 
-## Helper scripts (deterministic work stays out of the context window)
+## Scripts (deterministic work stays out of the context window)
 
 | Script | Used by | Does |
 |---|---|---|
-| `skills/knowledge-search/scripts/kb_rag.py` + `ragkit/` | research, knowledge-search, knowledge-ingest, kb_autoindex hook | Self-routing RAG: parent-child chunks, contextual retrieval, embeddings (fastembed / sentence-transformers, or stdlib hashing), late chunking, entity graph, incremental updates with a change journal; search routes each query, fuses vector, BM25 and graph rankings, reranks, grades (CRAG) and logs hit/miss; `verify` checks a draft against the base; `events` and `watch` take outside changes; `forget` drops a folder; `setup` installs a model into a private virtualenv |
+| `skills/knowledge-search/scripts/kb_rag.py` + `ragkit/` | knowledge-search, knowledge-ingest, research, kb_autoindex hook | Self-routing RAG: parent-child chunks, contextual retrieval, embeddings (fastembed / sentence-transformers, or stdlib hashing), late chunking, entity graph, incremental updates with a change journal; search routes each query, fuses vector, BM25 and graph rankings, reranks, grades (CRAG) and logs hit/miss; `verify` checks a draft against the base; `events` and `watch` take outside changes; `forget` drops a folder; `setup` installs a model into a private virtualenv |
 | `skills/knowledge-search/scripts/kb_route.py` | knowledge-search | Ranks topic blocks, resolves `file#section` to line ranges with sizes, prints budgeted `sed` commands, logs hit/miss |
 | `skills/knowledge-ingest/scripts/kb_lint.py` | knowledge-ingest | Broken pointers, unroutable pages, size budgets |
-| `skills/learn/scripts/lessons.py` | learn, feature, merge-check | Inbox, cursor, proposals, extra-reviewer matching against a patch, run stats with tuning hints |
-| `scripts/rag_eval.py` | contributors, CI | Runs any engine version against a golden question set: top-1, top-3, MRR, recall, correct refusals |
-| `skills/skill-radar/scripts/scan_sessions.py` | skill-radar | Mines transcripts: repeated commands, failing/denied tools, skills used, repeated requests |
-| `skills/skill-radar/scripts/inventory.py` | skill-radar | Installed skills, agents, plugins and MCP server *names* (never their config) |
+| `skills/research/scripts/lab.py` | research, rl-hypothesis-reviewer | `env`: requirements without evidence; `trace`: look-ahead, time order, blind decisions, stages against the expectation; `sample`: decisions to read; `holdout`: looks per candidate; `repro`: same command, same files |
+| `scripts/rag_eval.py` | contributors | Runs any engine version against a golden question set: top-1, top-3, MRR, recall, correct refusals |
+| `scripts/validate.py` | contributors, CI | Frontmatter, links, script paths, manifests, English-only, everything compiles |

@@ -6,7 +6,7 @@ body:
     id: component
     attributes:
       label: Component
-      placeholder: "hooks/verify_gate.py, /feature step 5, kb_route.py ..."
+      placeholder: "hooks/kb_autoindex.py, /research step 7, lab.py trace, kb_rag.py search ..."
     validations:
       required: true
   - type: textarea

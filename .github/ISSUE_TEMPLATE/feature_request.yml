@@ -1,5 +1,5 @@
-name: Feature or learning idea
-description: A new signal, guard, reviewer archetype, router improvement or skill
+name: Feature or research idea
+description: A new environment check, review step, retrieval improvement or skill
 labels: [enhancement]
 body:
   - type: textarea
@@ -12,9 +12,9 @@ body:
     id: evidence
     attributes:
       label: Evidence
-      description: A run artifact, a merge-gate finding, a lessons line, a radar gap. Redact private details.
+      description: A research journal row, a review, a trace, a retrieval miss. Redact private details.
   - type: textarea
     id: proposal
     attributes:
-      label: Proposed guard or change
-      description: Which rung of the ladder (test, hook, rule, prompt patch, new agent/skill) and why that one.
+      label: Proposed change
+      description: What would have caught it or made it cheaper, and how you would measure that.

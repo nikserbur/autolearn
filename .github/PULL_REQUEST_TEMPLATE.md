@@ -8,4 +8,4 @@
 - [ ] `python3 -m unittest discover -s tests` passes
 - [ ] New behavior has a test
 - [ ] No secrets, personal data or employer-specific content
-- [ ] Prompts/skills that change behavior still go through a user-approved proposal
+- [ ] Retrieval or prompt changes say what they were measured on

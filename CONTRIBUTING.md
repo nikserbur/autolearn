@@ -1,24 +1,22 @@
 # Contributing
 
-Thanks for helping research-lab learn. The most valuable contributions come from real use:
+Thanks for helping research-lab. The most valuable contributions come from real use:
 
-- **Feedback patterns** in `templates/feedback-patterns.json`: better phrasings, fewer false
-  positives, new languages. Every language needs one example per signal kind plus a `neutral`
-  example; `tests/test_hooks.py` checks that each example triggers its kind and that no neutral
-  example triggers anything with all languages loaded.
-- **Reviewer archetypes**: specialised reviewer agents that `/retro` produced for you and that
-  generalise (numerical stability, migrations, concurrency, time zones, data leakage...). Put them in `agents/` with a narrow checklist and a suggested trigger.
+- **Research protocol**: requirements for simulation and verification environments, checks
+  `lab.py` can make without judgement, and review steps that caught a real mistake, with the
+  evidence that motivated them.
+- **Retrieval**: a golden question set from your own notes for `scripts/rag_eval.py`, and
+  changes that improve it without hurting the independent set.
+- **Languages** for retrieval in `skills/knowledge-search/scripts/ragkit/lang.json`.
 - **Router and knowledge-base improvements**: scoring, slugs, budgets, linting.
-- **Pipeline lessons** that are not repo-specific: propose a change to an agent prompt with the
-  evidence that motivated it.
 
 ## Ground rules
 
 1. **Standard library only** for hooks and scripts (Python 3.9+). No network calls.
 2. **Every behavior has a test.** `python3 -m unittest discover -s tests` must pass.
 3. **Structure stays valid.** `python3 scripts/validate.py` must report 0 errors.
-4. **Nothing self-modifies without approval.** New features that change prompts, skills,
-   settings or `CLAUDE.md` must go through a proposal the user approves.
+4. **Measure, then claim.** A change to retrieval or to the research prompts states what it was
+   measured on, and on data the change was not tuned on.
 5. **Prompts are terse and imperative.** Match the tone of the existing agents: what to do,
    what not to do, what to return. No filler.
 6. **No secrets, no personal data, no employer-specific content** in examples or fixtures.
@@ -32,7 +30,7 @@ Run `./scripts/set-owner.sh <github-user> "<Your Name>"` to replace the `YOUR_GI
 
 ## Releasing
 
-Bump `version` in both manifests and `CHANGELOG.md`, tag `vX.Y.Z`.
+Bump `version` in `.claude-plugin/plugin.json` and `CHANGELOG.md`, tag `vX.Y.Z`.
 
 ## Pull requests
 

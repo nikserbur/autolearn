@@ -6,10 +6,9 @@ pointers, not content:
 | Layer | What enters the context | Budget |
 |---|---|---|
 | `CLAUDE.md` | a routing table: "when X, read/use Y" | keep it short; content lives elsewhere |
-| SessionStart brief | counts and paths: rules, repo lessons, inbox, proposals, radar age | < 700 chars |
+| SessionStart brief | counts and paths: topics in the map, a missing project page, a missing model | < 700 chars |
 | `knowledge-search` | the sections retrieval graded as an answer, or the matching topic blocks | 8 KB, more goes to a subagent |
-| Pipeline briefs | paths and facts, never pasted files | `CONTEXT.md` 8 KB, `CODEMAP.md` 10 KB |
-| Test output | failures and the summary line | 120 lines |
+| `/research` subagents | a 5-10 line reply; the details stay in `KB/sources/` and `KB/reviews/` | retrieved, never pasted |
 
 ## Building the base and the router together
 
@@ -27,9 +26,13 @@ router entry, no router entry without a page or a source.**
 
 Where pages come from:
 - `knowledge-ingest repo` in any repository (the session brief offers it when a repo has no page),
-- `al-docs-scout`'s "New for the topic map" at the end of every `/feature` run,
+- the end of every `/research` run: durable facts promoted from its `KNOWLEDGE.md`, each pointing
+  back to the experiment or review (the research KB itself is indexed where it lies),
 - any "remember this" in conversation,
-- repeated router misses surfaced by `/learn`.
+- repeated misses in `.router-log.tsv`.
+
+How sources are read, dated, cross-checked and ranked is in
+[SOURCES.md](../skills/knowledge-ingest/SOURCES.md), the same for both modes.
 
 ## Retrieval (RAG): one command, every technique
 
@@ -173,7 +176,7 @@ candidates that are shown alongside them, because Claude reads both.
 | 8 multi-hop, documents found: no packages / MiniLM | 0.75 / 0.85 | 0.48 / 0.73 | 0.83 / 0.88 |
 | 5 about the whole base, documents found: no packages / MiniLM | 0.19 / 0.19 | 0.40 / 0.35 | 0.36 / 0.35 |
 
-| 24 questions on this repo's docs at commit `4a32ca7`: top-1 / top-3 / MRR | v0.2.3 | v0.3.1 |
+| 24 questions on this repo's docs at commit `4a32ca7` (the set went with those docs in v0.4.0; check out that commit to rerun it): top-1 / top-3 / MRR | v0.2.3 | v0.3.1 |
 |---|---:|---:|
 | No packages | 0.79 / 0.92 / 0.87 | 0.83 / 1.00 / 0.91 |
 | `fastembed`, multilingual MiniLM | 0.50 / 0.71 / 0.63 | 0.79 / 1.00 / 0.89 |
@@ -216,5 +219,6 @@ been run. Real people's notes have not been measured: use `scripts/rag_eval.py` 
 
 ## Precedence
 
-Code > ADRs / DECISIONS.md > repo docs > knowledge base > wiki > chat. When the knowledge base
+A measurement on our own data > code > ADRs / DECISIONS.md > repo docs > knowledge base > papers >
+wiki > chat and forums. When the knowledge base
 disagrees with the repo, the router says so and offers a fix through `knowledge-ingest`.
