@@ -212,7 +212,12 @@ def parse_file(path: pathlib.Path, text: str) -> dict:
         offsets.append(pos)
         pos += len(line) + 1
     doc_tags = periods(f"{title} {path.stem}")
-    doc_meta = {"kind": default_kind(path), **meta_of(lines[:8])}
+    top = []  # a document-wide line sits above the first section, not under its heading
+    for line in lines[:8]:
+        if line.startswith("## "):
+            break
+        top.append(line)
+    doc_meta = {"kind": default_kind(path), **meta_of(top)}
     parents = []
     for s, e, head, body in (chunk_tsv(lines) if is_tsv else chunk_md(lines)):
         kids = [(s - 1, e - 1, 0, len(lines[e - 1]), body)] if is_tsv else split_children(lines[s - 1:e], s - 1)

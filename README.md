@@ -8,7 +8,7 @@ Claude runs research the way a careful lab does: it writes down what it expects 
 
 [![CI](https://github.com/nikserbur/research-lab/actions/workflows/ci.yml/badge.svg)](https://github.com/nikserbur/research-lab/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-0.6.0-informational)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.7.0-informational)](CHANGELOG.md)
 [![Claude Code plugin](https://img.shields.io/badge/Claude%20Code-plugin-D97757)](#install)
 
 </div>
@@ -38,7 +38,7 @@ Restart Claude Code. The first session creates the data directory `~/.claude/res
 | Writes to | the global knowledge base | `research/<slug>/KB/` in the project; durable facts are promoted to the global base |
 | Cost | close to zero, never interrupts | real compute and tokens; starts when you ask for research |
 
-Both read the same index, so a conclusion from last month's research answers today's question in another repo.
+Both read one index. A research KB answers its own research (and any search with `--everywhere`); what lasts is promoted into the global base, and from then on it answers today's question in any repo. A conclusion is not quietly overwritten: a section says what it is (`kind: measurement`, `conjecture`, `expectation`) and whether it still holds (`status: invalid`, `superseded`), search shows the label, leaves retracted sections out, and never grades a prediction or a guess `CORRECT`.
 
 ```mermaid
 flowchart LR
@@ -322,7 +322,7 @@ See [SECURITY.md](SECURITY.md) and [docs/hooks.md](docs/hooks.md).
 
 ## Status and limitations
 
-- **v0.6.0.** The hooks and scripts are covered by tests. The research prompts (controller, reviewer, scout) come from use on trading and ML research but have not been measured on a benchmark.
+- **v0.7.0.** The hooks and scripts are covered by tests. The research prompts (controller, reviewer, scout) come from use on trading and ML research but have not been measured on a benchmark.
 - **The environment checks are as good as the runs behind them.** `lab.py truncate` finds a look-ahead only across the cut you choose, so cut at several times; whether costs are realistic is the reviewer's judgement, not a script's.
 - **The ledger guards against drift, not against a determined forger.** Hashes catch edits to registered rows, expectations and the ledger itself; nothing stops someone from rewriting the whole ledger, or from running experiments outside `lab.py`, though `check` flags results that were never registered.
 - **The statistics assume a value per period.** The deflated Sharpe and the bootstrap need `daily.tsv`; with fewer than 20 periods a run counts as a test with p = 1. LORD++ grows strict as runs pile up without a discovery, so a long research needs stronger evidence for each new result; that is the point, and it can make a real but small edge go unrecognised. Strongly persistent daily results (lag-one correlation near 0.9) are still called significant too often: 9% at 5% in simulation. LORD++'s guarantee assumes independent p-values, and runs on the same days are not. PBO by combinatorial cross-validation is not implemented.
@@ -334,7 +334,7 @@ See [SECURITY.md](SECURITY.md) and [docs/hooks.md](docs/hooks.md).
 - **The graph reads stated relations.** Without an LLM, entities and relations come from patterns in English and Russian ([add a language](skills/knowledge-search/scripts/ragkit/lang.json)), so it follows "X depends on Y", not relations left implied.
 - **Verdicts are heuristics.** `CORRECT` means the question's words stand together in the section, not that the section answers it. Claude still reads what it cites.
 - **`verify` is a lexical check.** It catches wrong numbers and units, unknown ids and names, bad citations and claims the base does not hold. It misses what a sentence only implies and decisions superseded in another note, and it raises false alarms across languages and on paraphrases.
-- **Every indexed folder joins every later search.** `kb_rag.py forget --root DIR` takes one out. Files over 2 MB are skipped.
+- **Labels are only as good as the notes.** A section without a `kind:` line is shown unlabelled; research files get a kind from their folder, and `lab.py check` catches conclusions resting on an INVALID run, but a wrong claim written as a plain fact is still a plain fact. Files over 2 MB are skipped; `kb_rag.py forget --root DIR` drops a folder from the index.
 - **No connectors are bundled.** `kb_rag.py events` takes changes from Confluence, Notion or anything else as JSON lines, but something has to send them.
 
 ## FAQ

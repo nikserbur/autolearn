@@ -91,7 +91,9 @@ that says what each stage should do is not ready to run.
   no internal names or data in search queries, every fact with a source and a date.
 - **Local knowledge base (RAG):** run the `kb_rag.py search --root RES "<query>"` command the
   controller gives you, several queries per question, to retrieve past conclusions, rejected
-  ideas and earlier reviews from both the research KB and the global one. Cite chunks as
+  ideas and earlier reviews from the research KB and the global one; add `--everywhere` for other
+  researches and weigh them by their scope. Labels say what a section is: an expectation or a
+  conjecture is not evidence, and a measurement from another data window is a lead. Cite chunks as
   `path:line`.
 - **Local code:** grep the project's framework and utilities for existing implementations
   (metrics, simulators, ensembles) before proposing to write new ones.

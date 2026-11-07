@@ -7,8 +7,12 @@ description: >
 # knowledge-search - retrieve the right 8 KB, not the whole library
 
 This is the background mode of research-lab: it answers from what is already known, in any
-session, while hooks keep the index current. The direct mode, `/research`, produces new knowledge
-with subagents and writes it into research KBs that this search covers too.
+session, while hooks keep the index current. It searches the global knowledge base; a research KB
+answers with `--root <folder>/KB`, and every past research with `--everywhere`. The direct mode,
+`/research`, produces new knowledge with subagents; what lasts reaches this base through
+knowledge-ingest. Sections say what they are when the notes say so (`<measurement>`,
+`<expectation>`, `<SUPERSEDED>`): invalid and superseded ones stay out unless `--with-retired`, and an
+expectation, a conjecture or a snippet is never graded `CORRECT` on its own.
 
 The knowledge base lives in `~/.claude/research-lab/knowledge/` (below: KB):
 

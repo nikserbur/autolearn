@@ -55,14 +55,23 @@ every subagent gets.
   Without hooks: `RAG index --root <folder>/KB`.
 - Retrieval: `RAG search --root <folder>/KB "<query>"` routes each query by itself and returns the
   best sections with `path:line` and a verdict: `CORRECT`, `AMBIGUOUS` (it names what is missing) or
-  `INCORRECT` (read the closest sections it shows; if none answers, ask `rl-source-scout`). The store
-  holds every research KB ever indexed, so past projects answer too.
+  `INCORRECT` (read the closest sections it shows; if none answers, ask `rl-source-scout`). It sees
+  this research and the global knowledge base. Add `--everywhere` to ask every past research too
+  ("did anyone try X?"), and weigh what comes back by its scope: another project's data and costs.
+- Each section is labelled with what it is when it says so (`<measurement>`, `<conjecture>`,
+  `<SUPERSEDED>`); invalid and superseded sections are left out unless `--with-retired`, and an
+  expectation or a conjecture is never graded `CORRECT`. Give every `KNOWLEDGE.md` section such a
+  line under its heading: `kind: measurement · status: valid · scope: <data window, cost model> ·
+  date: <date>` (kinds: measurement, conclusion, conjecture, expectation, snippet). When an
+  experiment becomes `INVALID`, its sections become `status: invalid` with the reason, and a replaced
+  conclusion becomes `status: superseded · supersedes: <the old heading>` on the old section;
+  `LAB check` refuses a section that rests on an INVALID run and still reads as valid.
 - Retrieve (several short queries) before the program, before every round plan, before recording a
   decision ("did we see this before?"), and give the same command to every subagent. Never paste
   whole KB files into the context.
 - Embeddings: a multilingual model once `RAG setup` has run (about 370 MB of downloads, so ask
   first), otherwise the stdlib hashing fallback; `RAG status` says which. `RAG forget --root
-  <folder>/KB` takes a confidential research out of every later search. Files over 2 MB are not
+  <folder>/KB` drops a confidential research from the index altogether. Files over 2 MB are not
   indexed: summarise exports, do not store them in `KB/`.
 
 ## 1. Program, knowledge and recon (round 0)

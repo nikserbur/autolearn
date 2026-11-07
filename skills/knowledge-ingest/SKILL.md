@@ -34,6 +34,12 @@ Topic page `KB/topics/<slug>.md`, sections in this order (skip empty ones):
   question would use, sections short enough to stand alone as a chunk (~1.5 KB).
 - Do not copy long passages; restate in your own words, quote at most a short phrase.
 - Contradicting sources: keep both, say which one wins and why (code > ADR > docs > wiki > chat).
+- Say what a section is when it is not a plain sourced fact, on a line under its heading:
+  `kind: measurement · scope: ES Q3 2026, spread 0.25 · date: 2026-11-07` (kinds: measurement,
+  conclusion, conjecture, expectation, snippet). A fact that turns out wrong or is replaced is not
+  deleted: its section gets `status: superseded · supersedes: <old heading>` or `status: invalid`
+  with the reason, so search leaves it out but the history stays. Promoted research facts carry the
+  kind and scope of the research they came from.
 - Never store secrets, credentials or personal data. Sensitive pages: store a pointer and the
   note "restricted, ask the owner".
 

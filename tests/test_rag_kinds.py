@@ -45,6 +45,29 @@ class Kinds(RagCase):
         self.assertEqual(result["results"][0]["kind"], "measurement")
         self.assertEqual(result["verdict"], "CORRECT")
 
+    def test_a_label_under_the_first_heading_stays_with_that_section(self):
+        self.write("topics/e8.md", """\
+            # E8
+
+            ## E8 expected fill rate
+            kind: expectation
+            We expect a fill rate of 60 percent.
+
+            ## E8 measured fill rate
+            E8 filled 41 percent of orders over 900 orders.
+            """)
+        result = self.search("E8", "measured", "fill", "rate")
+        self.assertTrue(result["results"][0]["head"].endswith("E8 measured fill rate"))
+        self.assertEqual(result["results"][0]["kind"], "")
+        self.write("topics/e9.md", """\
+            # E9 notes
+            kind: conjecture
+
+            ## E9 fill rate
+            E9 might fill half of its orders.
+            """)
+        self.assertEqual(self.search("E9", "fill", "rate")["results"][0]["kind"], "conjecture")
+
     def test_retired_sections_stay_out_unless_asked_for(self):
         self.write("topics/fills.md", """\
             # Fill model

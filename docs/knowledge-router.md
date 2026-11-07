@@ -145,8 +145,12 @@ one: that runs in the background while the last snapshot answers by words.
 
 Files over 2 MB are not indexed (`RESEARCH_LAB_MAX_FILE_MB`), and searches and `status` say so. Notes that are not UTF-8 are
 read as a legacy encoding, and `status` lists them. A store that cannot be read is rebuilt. A lock is taken over when its
-process is gone or it has been quiet for ten minutes. A folder indexed once stays in every later search until
-`kb_rag.py forget --root DIR`. Upgrading adds the index to the data directory's `.gitignore` and stops tracking it.
+process is gone or it has been quiet for ten minutes; an index started while another runs leaves a note before loading
+the model. A folder indexed once stays in the index until `kb_rag.py forget --root DIR`, but a search draws only on the
+knowledge base and the folders given with `--root`, or on all of them with `--everywhere`. A section can say what it is on a
+line under its heading (`kind: measurement · status: valid · scope: ... · date: ...`); invalid and superseded sections stay out
+of answers unless `--with-retired`, an expectation, a conjecture or a snippet is never graded `CORRECT`, and `expect/`
+folders are not indexed. Upgrading adds the index to the data directory's `.gitignore` and stops tracking it.
 
 ### Optional LLM
 
