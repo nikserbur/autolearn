@@ -8,6 +8,7 @@ from __future__ import annotations
 import pathlib
 import re
 
+from .chunks import WEAK_KINDS
 from .core import is_identifier, normalize, sentences, tokens, words
 from .graph import extract, plain_sentences
 from .lang import CONTRAST, NEGATIONS, UNITS
@@ -191,6 +192,11 @@ def check_claim(index: Index, claim: str, emb) -> dict:
                 verdict, why = "partial", turned_down
     if bad_citation:
         verdict, why = ("partial" if verdict == "supported" else verdict), bad_citation
+    kind, status = parent.get("kind", ""), parent.get("status", "valid")
+    if verdict == "supported" and (kind in WEAK_KINDS or status != "valid"):
+        verdict, why = "partial", f"the evidence is {'a ' + kind if kind in WEAK_KINDS else status}, not a measurement"
+    if kind:
+        where += f" <{kind}>"
     return {"claim": claim, "verdict": verdict, "why": why, "evidence": where, "coverage": round(level, 2)}
 
 

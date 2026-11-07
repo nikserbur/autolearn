@@ -20,22 +20,26 @@ import sys
 
 BUDGETS = {"block_lines": 8, "map_bytes": 25_000, "topic_bytes": 40_000, "project_bytes": 15_000}
 STALE_DAYS = 365
-READ_ON = re.compile(r"\bread (\d{4}-\d{2}-\d{2})")
+READ_ON = re.compile(r"\bread:?\s+(?:on\s+)?(\d{4}-\d{2}-\d{2})")
+NUMBER = re.compile(r"(?<![A-Za-z\d])\d+(?:[.,]\d+)?(?![A-Za-z\d])")
 
 
 def stale_facts(page: pathlib.Path, today: datetime.date) -> list:
     """Lines whose numbers come from a source read more than STALE_DAYS ago."""
     out = []
-    for n, line in enumerate(page.read_text(encoding="utf-8").splitlines(), 1):
-        m = READ_ON.search(line)
-        if not m or not re.search(r"\d", line[:m.start()].split("(src:")[0]):
+    for n, line in enumerate(page.read_text(encoding="utf-8", errors="replace").splitlines(), 1):
+        dates = READ_ON.findall(line)
+        claim = line.split("(src:")[0]
+        if not dates or not NUMBER.search(READ_ON.sub("", claim)):
             continue
-        try:
-            age = (today - datetime.date.fromisoformat(m.group(1))).days
-        except ValueError:
-            continue
-        if age > STALE_DAYS:
-            out.append(f"{page.parent.name}/{page.name}:{n}: a number read {age} days ago; recheck it before relying on it")
+        ages = []
+        for date in dates:
+            try:
+                ages.append((today - datetime.date.fromisoformat(date)).days)
+            except ValueError:
+                continue
+        if ages and max(ages) > STALE_DAYS:
+            out.append(f"{page.parent.name}/{page.name}:{n}: a number read {max(ages)} days ago; recheck it before relying on it")
     return out
 
 
@@ -58,7 +62,7 @@ def lint(kb: pathlib.Path) -> tuple:
         return [f"no topic map at {kb / 'topic-map.md'}"], [], 0
     for m in maps:
         referenced.add(m.resolve())
-        text = m.read_text(encoding="utf-8")
+        text = m.read_text(encoding="utf-8", errors="replace")
         if m.name == "topic-map.md" and len(text.encode()) > BUDGETS["map_bytes"]:
             warnings.append(f"{m.name}: {len(text.encode()) // 1000} KB > 25 KB, split into map/<area>.md")
         for block in re.split(r"(?m)^(?=## )", text):
@@ -82,7 +86,7 @@ def lint(kb: pathlib.Path) -> tuple:
                     continue
                 referenced.add(path.resolve())
                 if anchor:
-                    heads = [slug(h) for h in re.findall(r"(?m)^#{1,6}\s+(.*)$", path.read_text(encoding="utf-8"))]
+                    heads = [slug(h) for h in re.findall(r"(?m)^#{1,6}\s+(.*)$", path.read_text(encoding="utf-8", errors="replace"))]
                     if not any(slug(anchor) == h or slug(anchor) in h for h in heads):
                         errors.append(f"{where}: pointer '{ptr}' -> no such section")
     pages = 0

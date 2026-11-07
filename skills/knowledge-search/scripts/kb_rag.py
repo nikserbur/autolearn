@@ -206,8 +206,15 @@ def cmd_search(store: Store, a: argparse.Namespace, emb, degraded: bool) -> int:
     top = "-"
     if result.passages and result.verdict != "INCORRECT":
         top = f"{rel_path(index, result.passages[0].file)}:{result.passages[0].parent['s']}"
-    if index.hidden and not a.json:
-        print(f"({index.hidden} chunks marked invalid or superseded were left out; --with-retired lets them answer)")
+    if not a.json:
+        if index.hidden:
+            print(f"({index.hidden} chunks marked invalid or superseded were left out; --with-retired lets them answer)")
+        others = [r for r in store.meta.get("roots", []) if not a.everywhere
+                  and not any(r == str(p.resolve()) for p in [a.kb, *a.root])]
+        if others and result.verdict != "CORRECT":
+            print(f"({len(others)} research folder{'s' if len(others) != 1 else ''} not searched; --everywhere includes them)")
+        if index.unlabelled:
+            print("(this index predates section labels and is being rebuilt; until then labels are missing)")
     log_search(a, query, top, LOG_OUTCOME[result.verdict])
     return 0
 
@@ -322,14 +329,22 @@ def main() -> int:
     store = Store(a.kb)
     if a.cmd == "status":
         return cmd_status(store)
-    if a.cmd == "index" and store.busy():  # leave a note before loading a model that would only wait
-        store.mark_dirty(roots_of_args(a))
-        print("Another index is running; it will pick this change up.")
-        return 0
-    emb = embedder(download=a.cmd not in ("search", "verify", "graph"))
-    degraded = is_degraded(store, emb)
     handlers = {"index": cmd_index, "search": cmd_search, "verify": cmd_verify, "graph": cmd_graph,
                 "events": cmd_events, "watch": cmd_watch, "forget": cmd_forget}
+    if a.cmd == "index":  # one indexer loads a model at a time; the others leave a note and leave
+        try:
+            with store.loading() as mine:
+                if not mine:
+                    store.mark_dirty(roots_of_args(a))
+                    print("Another index is running; it will pick this change up.")
+                    return 0
+                emb = embedder(download=True)
+                return handlers[a.cmd](store, a, emb, is_degraded(store, emb))
+        except PermissionError as e:  # "somebody else is on it" would be a false comfort
+            print(f"! could not update the index in {store.dir}: {e}", file=sys.stderr)
+            return 1
+    emb = embedder(download=a.cmd not in ("search", "verify", "graph"))
+    degraded = is_degraded(store, emb)
     return handlers[a.cmd](store, a, emb, degraded)
 
 

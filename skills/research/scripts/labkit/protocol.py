@@ -189,22 +189,30 @@ def unfinished(ledger: Ledger) -> list:
     return out
 
 
+RETIRED = re.compile(r"(?:^|[·;|])[\s>*_`+-]*status[*_`\s]*:[*_`\s]*(invalid|invalidated|retracted|wrong|superseded|obsolete|replaced)\b",
+                     re.I | re.M)
+
+
 def still_valid(lab: pathlib.Path, invalid: list) -> list:
-    """KNOWLEDGE.md sections that cite an INVALID experiment and do not say they are invalid or superseded."""
+    """KNOWLEDGE.md sections that cite an INVALID experiment and do not say, in the label lines under
+    their heading (where search reads them), that they are invalid or superseded. A line that names the
+    experiment as invalid is history, not a claim."""
     path = lab / "KB" / "KNOWLEDGE.md"
     if not invalid or not path.exists():
         return []
     out = []
-    for section in re.split(r"(?m)^(?=## )", path.read_text(encoding="utf-8")):
-        head = section.splitlines()[0] if section.strip() else ""
-        if re.search(r"(?mi)^\s*(?:[-*]\s*)?(?:kind|status)\s*:.*\bstatus\s*:\s*(invalid|superseded)\b", section) \
-                or re.search(r"(?mi)^\s*status\s*:\s*(invalid|superseded)\b", section):
-            continue
+    for section in re.split(r"(?m)^(?=#{1,6} )", path.read_text(encoding="utf-8")):
         lines = section.splitlines()
-        cited = [id for id in invalid if any(re.search(rf"(?<![\w.-]){re.escape(id)}(?![\w-])", line)
-                                             and not re.search(r"invalid|superseded|retracted", line, re.I) for line in lines)]
-        if cited and head.startswith("## ") and not head.lower().startswith(("## rejected", "## discrepancies")):
-            out.append(f"KNOWLEDGE.md section '{head[3:].strip()}' rests on {', '.join(cited)}, which is INVALID: "
+        if not lines or not lines[0].startswith("#"):
+            continue
+        head = lines[0].lstrip("#").strip()
+        if RETIRED.search("\n".join(lines[1:7])) or head.lower().startswith(("rejected", "discrepancies")):
+            continue
+        cited = [id for id in invalid if any(re.search(rf"(?<![\w.]){re.escape(id)}(?![\w])", line, re.I)
+                                             and not re.search(r"\b(invalid|superseded|retracted)\b", line, re.I)
+                                             for line in lines[1:])]
+        if cited:
+            out.append(f"KNOWLEDGE.md section '{head}' rests on {', '.join(cited)}, which is INVALID: "
                        "mark it `status: invalid` with the reason, or `status: superseded` and point to what replaced it")
     return out
 

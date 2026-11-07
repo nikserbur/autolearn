@@ -17,8 +17,9 @@ import sys
 from collections import Counter
 from dataclasses import dataclass, field
 
-from .core import (ID_RE, compound_ids, is_identifier, matched_text, normalize, periods, read_section, read_text, slug, stem,
-                   strip_periods, tokens, words)
+from .chunks import WEAK_KINDS
+from .core import (ID_RE, SCHEMA, SKIP_DIRS, compound_ids, is_identifier, matched_text, normalize, periods, read_section,
+                   read_text, slug, stem, strip_periods, tokens, words)
 from .graph import Graph, key_of
 from .lang import (AGGREGATE, AGGREGATE_WORDS, CONJUNCTIONS, IMPACT, LINK_QUESTIONS, LINK_WORDS, PERIOD_QUESTIONS, RELATION,
                    RELATION_NOISE,
@@ -49,7 +50,6 @@ CLOSE_OK, CLOSE_WEAK = 0.42, 0.2
 UNKNOWN_SHARE = 0.5  # terms the base never saw hold this much of the query: it probably is not in the base
 FOREIGN_K = 8  # across alphabets only vectors rank, and less precisely, so show more
 OK_COVERAGE, WEAK_COVERAGE = 0.7, 0.45
-WEAK_KINDS = {"expectation", "conjecture", "snippet"}  # never graded CORRECT on their own
 CORRECT, AMBIGUOUS, INCORRECT = "CORRECT", "AMBIGUOUS", "INCORRECT"
 ORDER = {INCORRECT: 0, AMBIGUOUS: 1, CORRECT: 2}
 LOG_OUTCOME = {CORRECT: "hit", AMBIGUOUS: "partial", INCORRECT: "miss"}
@@ -122,15 +122,19 @@ class Index:
         """`scope`: the folders whose files may answer (None: every indexed folder). `retired`: whether sections
         marked invalid or superseded may answer."""
         self.store, self.kb, self.has_vectors = store, kb, has_vectors
-        prefixes = None if scope is None else tuple(str(pathlib.Path(r).resolve()) + os.sep for r in scope)
-        self.hidden = 0
+        roots = None if scope is None else {str(pathlib.Path(r).resolve()) for r in scope}
+        prefixes = None if roots is None else tuple(r + os.sep for r in roots)
+        labelled = store.meta.get("schema") == SCHEMA  # an older store has no labels: keep predictions out by path
+        self.hidden, self.unlabelled = 0, not labelled
         self.items = []
         for f, e in store.meta["files"].items():
-            if prefixes is not None and not f.startswith(prefixes):
+            if prefixes is not None and not (f.startswith(prefixes) or e.get("root") in roots):
+                continue  # `root` is where the file was found, so a symlink into the base still counts
+            if not labelled and SKIP_DIRS & set(pathlib.Path(f).parts):
                 continue
             for c in e["chunks"]:
                 parent = e["parents"][c["p"]]
-                if not retired and parent.get("status", "valid") != "valid":
+                if not retired and parent.get("status") in ("invalid", "superseded"):  # `unclear` stays, unconfirmed
                     self.hidden += 1
                     continue
                 self.items.append((f, c, parent))
@@ -482,11 +486,15 @@ def grade(index: Index, query: Query, top: Passage) -> tuple:
         level = min(level, OK_COVERAGE - 0.01)
     elif misses_key_term(index, query, top.near):
         level = min(level, OK_COVERAGE - 0.01)
-    if top.parent.get("kind") in WEAK_KINDS or top.parent.get("status", "valid") != "valid":
+    if weak(top.parent):
         level = min(level, OK_COVERAGE - 0.01)  # a prediction or a guess can point the way, never settle a question
     if level >= OK_COVERAGE:
         return CORRECT, round(level, 2)
     return (AMBIGUOUS if level >= WEAK_COVERAGE else INCORRECT), round(level, 2)
+
+
+def weak(parent: dict) -> bool:
+    return parent.get("kind") in WEAK_KINDS or parent.get("status", "valid") != "valid"
 
 
 def missing_terms(index: Index, query: Query, top: Passage) -> list:
@@ -560,6 +568,8 @@ def graph_verdict(index: Index, query: Query, plan: Plan, edges: list, keep: lis
     The links are real either way, so a gap makes this partial, not a refusal."""
     if not any(e[2] != "related" for e in edges):
         return (*grade(index, query, keep[0] if keep else None), [])
+    if keep and all(weak(p.parent) for p in keep):  # links stated only by predictions or guesses
+        return AMBIGUOUS, 0.6, []
     rest = residual_terms(query, plan.seeds)
     if not rest.qs:
         return CORRECT, 0.8, []

@@ -157,8 +157,50 @@ class Store:
                     self.lock_path.unlink()
 
     def busy(self) -> bool:
-        """Another live process holds the index lock: a new indexer should leave a note, not load a model."""
-        return self.lock_path.exists() and not self._lock_is_stale()
+        """Another live process holds the index lock or is loading a model to index: a new indexer should leave a
+        note, not load a model only to wait."""
+        return any(self._held(p) for p in (self.lock_path, self.dir / "loading"))
+
+    def _held(self, path: pathlib.Path) -> bool:
+        try:
+            age = time.time() - path.stat().st_mtime
+            owner = int(path.read_text() or 0)
+        except FileNotFoundError:
+            return False
+        except (OSError, ValueError):
+            return True
+        if age > LOCK_STALE:
+            return False
+        if not owner or owner == os.getpid() or os.name == "nt":  # os.kill(pid, 0) would interrupt it on Windows
+            return owner != os.getpid()
+        try:
+            os.kill(owner, 0)
+        except ProcessLookupError:
+            return False
+        except OSError:
+            pass
+        return True
+
+    @contextlib.contextmanager
+    def loading(self):
+        """Yields True for the one process allowed to load a model and index now; others leave a note."""
+        path = self.dir / "loading"
+        self.dir.mkdir(parents=True, exist_ok=True)
+        if path.exists() and not self._held(path):
+            with contextlib.suppress(OSError):
+                path.unlink()
+        try:
+            fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        except FileExistsError:
+            yield False
+            return
+        os.write(fd, str(os.getpid()).encode())
+        os.close(fd)
+        try:
+            yield not self._held(self.lock_path)
+        finally:
+            with contextlib.suppress(OSError):
+                path.unlink()
 
     def _heartbeat(self) -> None:
         with contextlib.suppress(OSError):
@@ -218,8 +260,10 @@ class Store:
         live, events, skipped = {}, [], []
         touched = False
         limit = max_file_bytes()
+        found_in = {}
         for f in files([pathlib.Path(r) for r in live_roots]):
             key, prev = str(f.resolve()), old_files.get(str(f.resolve()))
+            found_in[key] = next((r for r in live_roots if str(f).startswith(r + os.sep)), "")
             try:
                 st = f.stat()
             except OSError:  # gone since the scan: the next refresh records that
@@ -244,6 +288,8 @@ class Store:
                 continue
             live[key], event = self._refresh(f, text, st, prev, emb)
             events.append(event)
+        for key, entry in live.items():
+            entry["root"] = found_in.get(key, entry.get("root", ""))
         for key, entry in old_files.items():
             if key not in live:
                 events.append({"op": "delete", "path": key, "added": 0, "removed": len(entry["chunks"]), "kept": 0,

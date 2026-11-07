@@ -128,6 +128,7 @@ def to_json(index: Index, result: Result, budget: int, backend: str) -> dict:
         "query": result.query, "route": result.route, "why": result.why, "verdict": result.verdict,
         "confidence": result.confidence, "reranker": result.reranker, "corrected": result.corrected,
         "backend": backend, "budget": budget, "missing": result.missing, "paths": result.paths,
+        "hidden_retired": index.hidden,
         "themes": result.themes, "clusters": result.clusters,
         "results": [{"path": rel_path(index, p.file), "start": p.parent["s"], "end": p.parent["e"],
                      "matched": [p.child["s"], p.child["e"]], "head": p.parent["head"], "score": round(p.score, 3),

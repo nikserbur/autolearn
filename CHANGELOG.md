@@ -6,6 +6,39 @@ All notable changes to this project are documented here. The format follows
 with every release, or plugin users will not receive the update. Up to 0.3.1 the project was
 called autolearn.
 
+## [0.7.0] - 2026-11-07
+
+Phase 3 of the [v2 architecture](docs/architecture-v2.md): typed knowledge. An independent review of
+0.6.0 found that a search for "E7 net result" returned E7's expectation first, graded CORRECT; a
+second review of the first version of this fix found seventeen more ways a prediction or a retracted
+result could still pass for a measurement. All are closed, each with a test.
+
+### Added
+- Section labels on lines under a heading: `kind: measurement · status: valid · scope: ES Q3 2026 ·
+  date: 2026-11-07`. Several lines, markdown decoration (`**Status:**`, `> status:`) and reasons
+  (`status: superseded by E9`) are read; kinds and statuses come from a closed list (hypothesis is a
+  conjecture, prediction an expectation, retracted is invalid, obsolete is superseded), and anything
+  else is `unclear`, never trusted as valid. Subsections and the rest of a long section inherit.
+  Research files take a kind from their own folder (reviews, sources, the journal, KNOWLEDGE.md).
+- A journal row is read by its columns: no result yet, or a pending decision, makes it an
+  expectation; a decision of INVALID or INVALIDATED retires it.
+- Search labels each section, leaves invalid and superseded sections out unless `--with-retired`
+  (and says how many), and never grades an expectation, a conjecture, a snippet or an unclear
+  section CORRECT, on the local and the graph route. `verify` does not accept them as support and
+  names the kind of its evidence.
+- `--everywhere`: research KBs answer only their own research (`--root`) unless asked; a search
+  that does not settle its question says how many research folders it left out.
+- `lab.py check` refuses a KNOWLEDGE.md section that rests on an INVALID run unless its label says
+  invalid or superseded; `kb_lint.py` warns about numbers read from a source over a year ago.
+
+### Changed
+- `expect/` and `sealed/` folders are never indexed; an index older than the labels keeps
+  `expect/` out by path while it is rebuilt, and says so.
+- A file is in scope by the folder it was found in, so a symlink into the base still answers.
+- One indexer loads a model at a time: a second one leaves a note before loading anything, and a
+  lock whose file vanished is not mistaken for a busy one.
+- Store schema 4: stores rebuild themselves once.
+
 ## [0.6.0] - 2026-11-07
 
 Phase 2 of the [v2 architecture](docs/architecture-v2.md): statistics that count what was tried.

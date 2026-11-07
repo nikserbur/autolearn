@@ -413,6 +413,12 @@ class Protocol(LabCase):
         self.write("research/toy/KB/KNOWLEDGE.md", knowledge.replace(
             "## Momentum works\n", "## Momentum works\nkind: conclusion · status: invalid\n"))
         self.assertNotIn("rests on", self.p("check"))
+        self.write("research/toy/KB/KNOWLEDGE.md", knowledge.replace(
+            "## Momentum works\n", "## Momentum works\n- **Status:** superseded by E9\n"))
+        self.assertNotIn("rests on", self.p("check"))
+        lowered = knowledge.replace("- E1 earned", "- e1 invalidates nothing; it earned")
+        self.write("research/toy/KB/KNOWLEDGE.md", lowered)
+        self.assertIn("rests on E1", self.p("check", expect=1))
 
     def test_the_brief_traces_every_number_to_the_record(self):
         self.passed()

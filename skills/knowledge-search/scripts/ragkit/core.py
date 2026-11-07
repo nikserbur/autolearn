@@ -17,7 +17,7 @@ CONTEXT_MAX = 220
 EMBED_CHARS = 2000
 HASH_DIM = 512
 STEM = 5  # stem length: 5 measured best on mixed Russian / English notes (6 splits endings)
-SKIP_DIRS = {".git", ".rag", "__pycache__", "expect"}  # expect/: predictions, read directly, never evidence
+SKIP_DIRS = {".git", ".rag", "__pycache__", "expect", "sealed"}  # predictions and sealed verdicts are read, never retrieved
 SUFFIXES = (".md", ".tsv", ".txt")
 MAX_FILE_BYTES = 2_000_000  # a dump this size would cost every later search far more than it could ever give back
 # Identifiers that must stay one term: pg-orders-3, INC-2291, v0.3.0, orders.created, kb_rag.py. Without this a query

@@ -153,6 +153,13 @@ class KbLint(ScriptCase):
         out = self.run_script("knowledge-ingest/scripts/kb_lint.py")
         self.assertIn(f"release-process.md:{len(lines) - 2}: a number read", out)
         self.assertEqual(out.count("a number read"), 1)
+        lines += ["- OAuth2 tokens expire (src: x, read 2020-01-02 ✅)",
+                  "- Margin is 12 (src: x, read 2099-01-01, read 2020-01-02 ✅)"]
+        page.write_bytes(("\n".join(lines) + "\n").encode("utf-8") + "- Caf\xe9 fee 3 (src: x, read 2020-01-02)\n".encode("latin-1"))
+        out = self.run_script("knowledge-ingest/scripts/kb_lint.py")
+        self.assertNotIn(f"release-process.md:{len(lines) - 1}:", out)
+        self.assertIn(f"release-process.md:{len(lines)}: a number read", out)
+        self.assertIn(f"release-process.md:{len(lines) + 1}: a number read", out)
 
     def test_unroutable_page_and_broken_pointer_fail(self):
         (self.kb / "topics" / "orphan.md").write_text("# Orphan\n")
