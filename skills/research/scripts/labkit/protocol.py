@@ -141,6 +141,9 @@ def cmd_run(a) -> int:
     (out / "RUN.json").write_text(json.dumps(info, indent=1), encoding="utf-8")
     (out / "DONE").write_text(f"{code}\n", encoding="utf-8")
     print(f"{a.id}: exit {code} after {seconds} s, candidate {candidate}, log results/{a.id}/run.log")
+    from . import selection  # every run is a test, recorded as it ends
+    for line in selection.describe(selection.record_test(a.lab, ledger, a.id, ledger.last("run_start", a.id), code)):
+        print(line)
     return code
 
 
@@ -187,6 +190,7 @@ def unfinished(ledger: Ledger) -> list:
 
 
 def cmd_check(a) -> int:
+    from .selection import reviewed
     ledger = Ledger(a.lab)
     errors = [f"ledger {p}" for p in ledger.broken()]
     registered = {e["id"] for e in ledger.find("register")}
@@ -200,8 +204,8 @@ def cmd_check(a) -> int:
         if "KEEP" in decision or "BEST" in decision:
             if not judged_latest(ledger, id):
                 errors.append(f"{id}: marked {row.get('decision')} without a PASS from lab.py judge on its latest run")
-            if "PASS" not in row.get("review", "").upper():
-                errors.append(f"{id}: marked {row.get('decision')} without the reviewer's PASS in its review cell")
+            if not reviewed(ledger, id):
+                errors.append(f"{id}: marked {row.get('decision')} without a reviewer PASS for its latest run")
         if id not in registered and row.get("result", "").strip():
             errors.append(f"{id}: has a result but was never registered")
     warnings = [f"{e['id']}: started {e['ts']} (pid {e.get('pid')}), no end: running, or crashed" for e in unfinished(ledger)]
@@ -321,7 +325,9 @@ def traced(token: str, values: list) -> bool:
     number = abs(float(token.rstrip("%")))
     decimals = len(token.rstrip("%").split(".")[1]) if "." in token else 0
     shapes = [(number, decimals)] + ([(number / 100, decimals + 2)] if percent else [])
-    return any(abs(round(abs(v), d) - n) <= 0.5 * 10 ** -d + 1e-12 for n, d in shapes for v in values)
+    # Rounding only from two decimals on: a coarse number would match one of many recorded values by chance
+    return any((abs(round(abs(v), d) - n) <= 0.5 * 10 ** -d + 1e-12) if d >= 2 else abs(abs(v) - n) <= 1e-9
+               for n, d in shapes for v in values)
 
 
 def cmd_brief(a) -> int:

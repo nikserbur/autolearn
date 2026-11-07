@@ -12,7 +12,8 @@ answer) and "costs" as what each decision pays (fees, latency, compute, errors).
 ## Simulation environment
 - Command: `<exact command, run from a frozen copy of the script>`
 - Data: `<files or tables>`, sha256 `<...>`; code: commit `<...>`; seeds: `<...>`
-- Output per experiment: `results/<id>/metrics.tsv`, `results/<id>/trace.tsv` (one row per decision)
+- Output per experiment: `results/<id>/metrics.tsv` (one row of totals), `results/<id>/daily.tsv`
+  (one row per day: `period`, `pnl`), `results/<id>/trace.tsv` (one row per decision)
 - Limits: `<cores, memory, hours>`
 
 | # | Requirement | Status | Evidence |

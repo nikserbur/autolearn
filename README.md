@@ -8,7 +8,7 @@ Claude runs research the way a careful lab does: it writes down what it expects 
 
 [![CI](https://github.com/nikserbur/research-lab/actions/workflows/ci.yml/badge.svg)](https://github.com/nikserbur/research-lab/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-0.5.0-informational)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.6.0-informational)](CHANGELOG.md)
 [![Claude Code plugin](https://img.shields.io/badge/Claude%20Code-plugin-D97757)](#install)
 
 </div>
@@ -95,6 +95,22 @@ lab.py brief --lab research/mm research/mm/BRIEF_2026-11-07.md   # every number 
 ```
 
 Every attempt is a trial, crashes included, and every reported result carries the trial count. The verification report goes to `sealed/`, outside the knowledge base, so what the holdout showed cannot shape the next hypothesis.
+
+### Statistics that know how many things were tried
+
+Try a hundred variants of noise and the best one shows a Sharpe ratio of about 2.5 standard errors. So "best" is not a cell the agent fills in; `lab.py` grants it:
+
+```text
+lab.py settings --lab research/mm --alpha 0.05   # value column, bootstrap block, error rate: fixed before run 1
+lab.py stats --lab research/mm E7        # the record made when E7's run ended: deflated Sharpe after N trials,
+                                          # block-bootstrap p and interval, periods needed, LORD++ decision
+lab.py compare --lab research/mm E7 E3   # same days, paired: better outside the interval? (recorded once)
+lab.py review --lab research/mm E7 --verdict PASS --round R04   # the reviewer's verdict, in the ledger
+lab.py best --lab research/mm E7         # PASS + reviewer PASS + discovery + DSR >= 0.95 + beats the best
+lab.py fdr --lab research/mm             # every run's test, LORD++ across the research, BY within a round
+```
+
+Every run is tested as it ends, so a run nobody looked at still spends the error budget, and a statistic cannot be recomputed with friendlier settings. The bootstrap resamples blocks of days whose length comes from the data, so days that move together stay together; the p-value is a Student tail of the mean over its bootstrap standard error. LORD++ fixes each run's level when it ends, so a later result cannot rescue an earlier one. Only the current best may be looked at on the holdout. All of it is standard-library Python, checked against the papers and by simulation: on 250 days of noise it calls 3.3% of independent series significant at 5%, and 5.2% of series with a lag-one correlation of 0.5.
 
 ### Simulation and verification environments
 
@@ -306,10 +322,10 @@ See [SECURITY.md](SECURITY.md) and [docs/hooks.md](docs/hooks.md).
 
 ## Status and limitations
 
-- **v0.5.0.** The hooks and scripts are covered by tests. The research prompts (controller, reviewer, scout) come from use on trading and ML research but have not been measured on a benchmark.
+- **v0.6.0.** The hooks and scripts are covered by tests. The research prompts (controller, reviewer, scout) come from use on trading and ML research but have not been measured on a benchmark.
 - **The environment checks are as good as the runs behind them.** `lab.py truncate` finds a look-ahead only across the cut you choose, so cut at several times; whether costs are realistic is the reviewer's judgement, not a script's.
 - **The ledger guards against drift, not against a determined forger.** Hashes catch edits to registered rows, expectations and the ledger itself; nothing stops someone from rewriting the whole ledger, or from running experiments outside `lab.py`, though `check` flags results that were never registered.
-- **No multiple-testing statistics yet.** The trial count is recorded and printed; deflated Sharpe, block bootstrap and FDR control are phase 2 of [the v2 plan](docs/architecture-v2.md).
+- **The statistics assume a value per period.** The deflated Sharpe and the bootstrap need `daily.tsv`; with fewer than 20 periods a run counts as a test with p = 1. LORD++ grows strict as runs pile up without a discovery, so a long research needs stronger evidence for each new result; that is the point, and it can make a real but small edge go unrecognised. Strongly persistent daily results (lag-one correlation near 0.9) are still called significant too often: 9% at 5% in simulation. LORD++'s guarantee assumes independent p-values, and runs on the same days are not. PBO by combinatorial cross-validation is not implemented.
 - **research-lab does not bring a simulator.** It states the requirements and checks them; the simulator or pipeline is your project's.
 - **Claude Code only.** There are no adapters for Codex, Cursor or other hosts.
 - **Retrieval is strongest with an embedding model.** Without one (`kb_rag.py setup`) search is lexical plus hashed vectors: paraphrases are often missed and a question in another language than the notes finds nothing (0 of 5 in the benchmark). With one, such a question is still weak (2 of 5 in the top 3), so the output asks Claude to repeat it in the language of the notes. A search with a model takes 1-3 s and about 1 GB of memory on 10,000 chunks.

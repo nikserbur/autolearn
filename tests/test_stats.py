@@ -41,6 +41,13 @@ class DeflatedSharpe(unittest.TestCase):
         normal = stats.psr(0.1, 0.0, 250, 0.0, 3.0)
         self.assertLess(stats.psr(0.1, 0.0, 250, -1.0, 10.0), normal)
 
+    def test_track_length_for_a_deflated_sharpe_of_95_percent(self):
+        sr, trials = 0.167, 31
+        n95 = stats.min_track_length_95(sr, trials)
+        benchmark = lambda n: stats.expected_max_sharpe(trials, 1 / n)
+        self.assertAlmostEqual(stats.psr(sr, benchmark(n95), round(n95), 0.0, 3.0), 0.95, delta=0.01)
+        self.assertGreater(n95, stats.min_track_length(sr, trials))
+
     def test_minimum_track_length(self):
         self.assertAlmostEqual(stats.min_track_length(0.1, 100), (stats.expected_max_sharpe(100, 1.0) / 0.1) ** 2)
         self.assertEqual(stats.min_track_length(0.1, 1), 0.0)
@@ -70,10 +77,40 @@ class Bootstrap(unittest.TestCase):
         wide = stats.interval(walk, block=20)
         self.assertGreater(wide[1] - wide[0], narrow[1] - narrow[0])
 
-    def test_resample_indices_wrap_and_keep_length(self):
-        idx = stats.stationary_indices(10, 3, random.Random(0))
-        self.assertEqual(len(idx), 10)
-        self.assertTrue(all(0 <= i < 10 for i in idx))
+    def test_block_length_follows_the_autocorrelation(self):
+        self.assertLess(stats.auto_block(self.series(0.0, n=1000)), 3)
+        rng, level, walk = random.Random(5), 0.0, []
+        for _ in range(1000):
+            level = 0.9 * level + rng.gauss(0, 1)
+            walk.append(level)
+        self.assertGreater(stats.auto_block(walk), 10)
+        self.assertLessEqual(stats.auto_block(walk), 250)
+        self.assertEqual(stats.auto_block([1.0] * 50), 1.0)
+
+    def test_student_tail(self):
+        self.assertAlmostEqual(stats.t_upper(2.0, 10), 0.036694, places=5)
+        self.assertAlmostEqual(stats.t_upper(1.812461, 10), 0.05, places=5)
+        self.assertAlmostEqual(stats.t_upper(-1.0, 5), 1 - stats.t_upper(1.0, 5), places=12)
+        self.assertAlmostEqual(stats.t_upper(1.644854, 1e7), 0.05, places=4)
+        self.assertEqual(stats.t_upper(0.0, 3), 0.5)
+
+    def test_noise_is_rejected_near_its_level(self):
+        rng, hits = random.Random(42), 0
+        for k in range(200):
+            xs = [rng.gauss(0, 1) for _ in range(250)]
+            hits += stats.bootstrap(xs, stats.auto_block(xs), draws=400, seed=k)["p"] <= 0.05
+        self.assertLessEqual(hits, 18)
+
+    def test_a_strong_edge_gets_a_tail_p_value_below_the_draw_floor(self):
+        result = stats.bootstrap(self.series(1.0), 5)
+        self.assertLess(result["p"], 1 / 2001)
+        self.assertGreater(result["se"], 0)
+
+    def test_long_series_are_fast(self):
+        import time
+        start = time.time()
+        stats.bootstrap(self.series(0.1, n=20000), stats.auto_block(self.series(0.1, n=20000)))
+        self.assertLess(time.time() - start, 30)  # about 2 s; the old index-by-index loop took 15 s here
 
 
 class FalseDiscoveries(unittest.TestCase):

@@ -91,7 +91,9 @@ none. Prove each requirement and write the proof in Evidence:
 - S5: the three control runs, registered and run like any experiment;
 - S6: `LAB trace results/<id>/trace.tsv`; every decision is a row, including deciding to do nothing.
 
-`LAB env KB/ENVIRONMENT.md --stage sim` lists what is unproven; a ❌ blocks round 1 unless the user
+Fix the statistics once, before the first run: `LAB settings --lab <folder> --column pnl --block auto
+--alpha 0.05` (the value column of `daily.tsv`, the bootstrap block, the error rate; the defaults are
+these). `LAB env KB/ENVIRONMENT.md --stage sim` lists what is unproven; a ❌ blocks round 1 unless the user
 accepts the risk (quote it in `PROGRAM.md`). V1-V5 are proven for a candidate before its holdout look
 (`--stage verify`).
 
@@ -118,7 +120,8 @@ missing hypotheses it found. Skip only for a single cheap hypothesis.
    fixed; `LAB check` reports any edit. A changed experiment gets a new id.
 2. `LAB run --lab <folder> <id> --code <script> --config <file> --data <file> -- <command>`: in the
    simulation environment only, never on the holdout. `--code` names every file that makes the
-   candidate; `metrics.tsv` holds one row of totals (aggregate seeds and days before writing it). It records the candidate hash and the attempt
+   candidate; `metrics.tsv` holds one row of totals (aggregate seeds and days before writing it), and
+   `daily.tsv` one row per day or period (`period`, `pnl` or the value the strategy is judged on). It records the candidate hash and the attempt
    (every attempt is a trial, crashes included), moves stale outputs aside, logs to
    `results/<id>/run.log`, and writes `RUN.json` and `DONE`. Long jobs: start it in the background
    with a monitor; never stop or touch other people's processes, no `pkill`.
@@ -128,11 +131,18 @@ missing hypotheses it found. Skip only for a single cheap hypothesis.
 
 ## 6. Judge and record
 `LAB judge --lab <folder> <id>` applies the registered criterion to the run's own `metrics.tsv` and
-prints PASS, FAIL or CRASH with the number of trials so far. Fill the row's result cells with what
-it printed and the artifact paths. A decision (`KEEP` / `DISCARD` / `ITERATE` / `INVALID`, `BEST` for
-the current best) waits for the review: `KEEP` and `BEST` need the judge's PASS on the latest run
-and the reviewer's PASS written into the row's review cell (`R03 PASS`); `LAB check` refuses them
-otherwise. Negative results are knowledge too.
+prints PASS, FAIL or CRASH with the number of trials so far. Every run was also tested as it
+ended (`LAB stats --lab <folder> <id>` shows the record): the deflated Sharpe ratio against the best
+Sharpe that many tries of noise would show, a block-bootstrap p-value and interval over the days,
+the periods a deflated Sharpe of 0.95 would need, and whether the run is a discovery under LORD++,
+whose level for each run is fixed when it ends. A run without a usable `daily.tsv` is a test with
+p = 1: untested runs spend the error budget too. Fill the row's result cells with what both printed
+and the artifact paths. A decision (`KEEP` / `DISCARD` / `ITERATE` / `INVALID`, `BEST` for
+the current best) waits for the review: `KEEP` needs the judge's PASS on the latest run and the
+reviewer's PASS for that run, which the reviewer records with `LAB review`. `BEST` is not a cell you set:
+`LAB best --lab <folder> <id>` grants it only to a LORD++ discovery with a deflated Sharpe of at least
+0.95 that beats the current best outside the paired interval (`LAB compare --lab <folder> <id> <best>`).
+`LAB check` refuses a row that claims more than the ledger holds. Negative results are knowledge too.
 
 ## 7. Independent review: expected against actual
 After every finished batch and always before a new round: Agent -> `rl-hypothesis-reviewer`, mode
@@ -164,7 +174,7 @@ rejection into "Rejected", a new direction into the next round). Ask and wait on
 conflicts with the evidence or the next step costs far more than the program allows.
 
 ## 10. Verification, stop rule and handoff
-1. When a candidate is judged PASS in simulation and the reviewer's verdict is PASS: Agent ->
+1. When the current BEST (by `LAB best`) has the reviewer's PASS: Agent ->
    `rl-hypothesis-reviewer`, mode `verify`: the candidate id, `ENVIRONMENT.md`, the research folder,
    the LAB command. It proves V1-V5 for the candidate (`LAB holdout open` refuses until they are), opens the look, runs it
    once on the holdout, writes its report into `sealed/`, closes the look with `LAB holdout close`
@@ -175,8 +185,9 @@ conflicts with the evidence or the next step costs far more than the program all
    a new research folder that starts from this one's knowledge.
 2. Stop when the round count is reached, a candidate passes verification, or two rounds in a row
    bring nothing (say so and propose a change of direction).
-3. Write `<folder>/BRIEF_<date>.md`, outside `KB/` (results, the best variant, the number of trials,
-   what is proven and what is not, next steps). `LAB brief --lab <folder> <brief>` must pass: every
+3. Write `<folder>/BRIEF_<date>.md`, outside `KB/` (results, the best variant with its deflated
+   Sharpe and interval, the number of trials and discoveries from `LAB fdr`, what is proven and what
+   is not, next steps). `LAB brief --lab <folder> <brief>` must pass: every
    number traces to a metrics file, the ledger, the journal or the program. Then
    `RAG verify --root <folder>/KB --file <brief>` checks names, ids and claims against the KB; copy
    the brief into `KB/` only after both pass. Promote what matters beyond this project by the
@@ -191,6 +202,7 @@ When an experiment trains or tunes a model:
   them, net of costs.
 - One change per experiment; an ablation for every component that stays.
 - At least three seeds for a claimed gain; report the spread. A gain inside the spread is noise.
+  Average the seeds into `metrics.tsv` and `daily.tsv`; the seeds themselves go next to them.
 - A learning curve (data size against score) and the train-validation gap before a bigger model.
 - What the model uses: importance or ablation. An input that should not matter but does is a
   leakage suspect until the trace shows otherwise.
@@ -202,8 +214,8 @@ When an experiment trains or tunes a model:
 - Evidence over impressions: every conclusion has a number and a source.
 - The hypothesis, its expected behaviour and its pass criterion are registered before the run;
   tuning on the holdout makes a result `INVALID`, a look over the budget makes it SPOILED.
-- Every reported result says how many trials the research has run (`LAB judge` prints it): the
-  best of many tries looks better than it is.
+- Every reported result says how many trials the research has run and its deflated Sharpe
+  (`LAB stats`): the best of many tries looks better than it is.
 - A surprise is data: a discrepancy between expected and actual is recorded and tested, never
   explained away.
 - The reviewer never sees your reasoning; you never edit its report.

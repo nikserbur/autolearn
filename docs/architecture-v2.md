@@ -1,6 +1,6 @@
 # research-lab v2: evaluation of v0.4.0 and the proposed architecture
 
-Status: **phase 1 implemented in v0.5.0** (2026-11-07); phases 2-5 are proposals.
+Status: **phases 1 and 2 implemented in v0.5.0 and v0.6.0** (2026-11-07); phases 3-5 are proposals.
 
 ## How v0.4.0 was evaluated
 
@@ -111,7 +111,7 @@ expectation), and a scripted reviewer run is scored on finding the rest.
 | Phase | Content | Fixes |
 |---|---|---|
 | 1 (done, v0.5.0) | ledger, `register`/`run`/`judge`/`check`/`holdout open`, one holdout budget, sealed verify, brief checked against the ledger, `repro` and `trace` fixes, the four contradictions, toy fixture | C1, C2, H1, H3, H4, H7, M1 |
-| 2 | trial count, deflated Sharpe, block bootstrap for BEST, BY within a round, LORD++ across rounds | H2 |
+| 2 (done, v0.6.0) | trial count, deflated Sharpe, block bootstrap for BEST, BY within a round, LORD++ across rounds | H2 |
 | 3 | typed knowledge, private research KBs, supersession, stale-fact lint, lock-before-model | H5, M3 |
 | 4 | executor agent, `status`/`STATUS.md`, resumable jobs, per-round files, brief lists active researches | H6, M2 |
 | 5 (optional) | tree search over experiments in parallel worktrees with per-run budgets | greedy local optima |

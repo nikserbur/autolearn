@@ -6,6 +6,32 @@ All notable changes to this project are documented here. The format follows
 with every release, or plugin users will not receive the update. Up to 0.3.1 the project was
 called autolearn.
 
+## [0.6.0] - 2026-11-07
+
+Phase 2 of the [v2 architecture](docs/architecture-v2.md): statistics that count what was tried.
+An independent check confirmed the formulas against the papers and by simulation, and found four
+ways around the gates in the first draft; all are closed below, each with a test.
+
+### Added
+- `labkit/stats.py`, standard library only: Sharpe per period with skewness and kurtosis, the
+  probabilistic and deflated Sharpe ratio, the periods a deflated Sharpe of 0.95 needs, a stationary
+  block bootstrap in one pass with a block length from the data (Politis-White, doubled) and a
+  Student-tail p-value, Benjamini-Yekutieli, and LORD++.
+- Every `lab.py run` is tested as it ends, under the ledger's lock, on `results/<id>/daily.tsv`:
+  the pool of trial Sharpes counts each candidate once with its variance floored at 1/n, trials
+  count a run's own `configs` metric, and a run without a usable series is a test with p = 1.
+- `lab.py settings` (value column, block, alpha up to 0.1, fixed before the first run), `stats` (the
+  record), `compare` (paired on identical periods, recorded once per pair of runs), `review` (the
+  reviewer's verdict on a run, in the ledger), `best` (PASS, reviewer PASS, a LORD++ discovery,
+  deflated Sharpe of at least 0.95, better than the current best), `fdr`.
+
+### Changed
+- Only the current best may be looked at on the holdout. `check` refuses a BEST row the ledger
+  does not hold, and KEEP without a reviewer PASS recorded for the latest run.
+- `lab.py brief` matches numbers with fewer than two decimals exactly, so a coarse made-up number
+  cannot ride on one of the many recorded values.
+- `daily.tsv` is part of every experiment's output (`ENVIRONMENT-TEMPLATE.md`, the skill).
+
 ## [0.5.0] - 2026-11-07
 
 Phase 1 of the [v2 architecture](docs/architecture-v2.md): the research protocol is enforced by a

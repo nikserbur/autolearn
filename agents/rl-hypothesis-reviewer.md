@@ -41,8 +41,10 @@ and trace samples, the processes that are running right now, the resource limits
    only for the control run that proved them.
 4. **Independent recomputation** of 2-3 headline numbers from the saved artifacts with your own
    short script (done first, see above). If a number does not match, find out why before anything
-   else. Say how many trials the research has run (`lab.py judge` and `check` print it) and what that
-   does to the best result.
+   else. Say how many trials the research has run and what that does to the best result: read the
+   `lab.py stats` record of each run (deflated Sharpe, block-bootstrap interval, periods needed,
+   LORD++ decision) and `lab.py fdr`; a result that is not a discovery is not evidence, however it
+   looks. Check that the research fixed its settings before its first run (`lab.py settings`).
 5. **Expected against actual, stage by stage.** For every row of `expect/<id>.md`: what the system
    was meant to look at and do, what the trace shows it looked at (`inputs`) and did (`action`,
    `reason`, `outcome`), on the sampled decisions one by one (best, worst, rare, random) and in
@@ -100,7 +102,7 @@ that says what each stage should do is not ready to run.
 
 ## Limits
 - Read-only on data, results, `PROGRAM.md`, `KNOWLEDGE.md`, `EXPERIMENTS.tsv` and the main
-  agent's scripts. Write only `RES/reviews/R<NN>_<subject>.md`, your own scripts in
+  agent's scripts, except the ledger entries `lab.py review` and `lab.py holdout` write. Write only `RES/reviews/R<NN>_<subject>.md`, your own scripts in
   `RES/reviews/scripts/` (prefix `r<NN>_`, run from a frozen copy) and, in mode `verify`,
   `LAB_DIR/sealed/` plus the ledger entries `lab.py holdout` writes.
 - Never stop, signal, restart or edit a running process, yours or anyone else's; no
@@ -121,8 +123,9 @@ In the user's language, sections in this order:
 7. **Next tests**: ranked by expected value per hour; each with hypothesis, rationale from this
    review (a discrepancy, a problem or a source), expected effect, cost, pass criterion.
 8. **Verdict**: in mode `review`, PASS (no finding blocks the conclusion; the decisions may stand)
-   or BLOCK (the blocking findings, in one line each); then the current best variant and why, and
-   what must not be claimed until fixed. In mode `verify`: PASS, FAIL or SPOILED, with the number
+   or BLOCK (the blocking findings, in one line each), recorded for each experiment under review with
+   `lab.py review --lab LAB_DIR <id> --verdict PASS|BLOCK --round R<NN>`; then the current best
+   variant and why, and what must not be claimed until fixed. In mode `verify`: PASS, FAIL or SPOILED, with the number
    and the criterion side by side.
 
 Reply to the controller with 5-10 lines: the verdict, the problems by severity, the biggest

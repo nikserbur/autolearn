@@ -82,8 +82,12 @@ class Ledger:
                 out.append(entry)
         return out
 
-    def append(self, kind: str, **fields) -> dict:
+    def append(self, kind: str, compute=None, **fields) -> dict:
+        """Append one entry. `compute(ledger)` adds fields read from the ledger under the same lock,
+        so what it counts cannot change before the entry is written."""
         with locked(self.lab / ".ledger.lock"):
+            if compute:
+                fields = {**fields, **compute(self)}
             lines = self.lines()
             entry = {"seq": len(lines) + 1, "ts": datetime.datetime.now().isoformat(timespec="seconds"),
                      "kind": kind, **fields, "prev": sha256_bytes(lines[-1].encode("utf-8")) if lines else ""}

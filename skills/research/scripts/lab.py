@@ -11,13 +11,15 @@ Protocol (state lives in <lab>/LEDGER.jsonl, append-only and hash-chained; <lab>
                                                      one look budget per research, opened before the run
     lab.py brief --lab DIR BRIEF.md                  every number in the brief traces to the record
 
-Selection (reads results/ID/daily.tsv: one row per day or period, a `period` column and a value column):
-    lab.py stats --lab DIR ID [--column pnl] [--block 5]
-                                                     deflated Sharpe after N trials, block-bootstrap p and interval,
-                                                     LORD++ level; recorded once per run
-    lab.py compare --lab DIR NEW OLD                 paired by period: is NEW better outside the interval?
-    lab.py best --lab DIR ID                         make ID the best: PASS, reviewer PASS, a discovery, DSR >= 0.95,
-                                                     better than the current best
+Selection (every run is tested as it ends on results/ID/daily.tsv: a `period` column and a value column):
+    lab.py settings --lab DIR [--column pnl] [--block auto|N] [--alpha 0.05]
+                                                     fixed for the whole research, before its first run
+    lab.py stats --lab DIR ID                        the recorded test of the latest run: deflated Sharpe after N
+                                                     trials, block-bootstrap p and interval, LORD++ decision
+    lab.py compare --lab DIR NEW OLD                 paired on the same periods: better outside the interval? (once)
+    lab.py review --lab DIR ID --verdict PASS|BLOCK --round R03
+                                                     the reviewer's verdict on the latest run
+    lab.py best --lab DIR ID                         PASS, reviewer PASS, a discovery, DSR >= 0.95, beats the best
     lab.py fdr --lab DIR                             every test with its LORD++ decision and Benjamini-Yekutieli by round
 
 Environment:
@@ -336,16 +338,21 @@ def main(argv=None) -> int:
     s.add_argument("--by", default="rl-hypothesis-reviewer")
     s = with_lab(sub, "brief")
     s.add_argument("file")
-    for name in ("stats", "compare", "best", "fdr"):
-        s = with_lab(sub, name)
-        if name == "compare":
-            s.add_argument("new")
-            s.add_argument("old")
-        elif name != "fdr":
-            s.add_argument("id")
-        s.add_argument("--column", default="pnl")
-        s.add_argument("--block", type=float, default=5.0)
-        s.add_argument("--alpha", type=float, default=0.05)
+    s = with_lab(sub, "settings")
+    s.add_argument("--column")
+    s.add_argument("--block")
+    s.add_argument("--alpha", type=float)
+    for name in ("stats", "best"):
+        with_lab(sub, name).add_argument("id")
+    s = with_lab(sub, "compare")
+    s.add_argument("new")
+    s.add_argument("old")
+    s = with_lab(sub, "review")
+    s.add_argument("id")
+    s.add_argument("--verdict", choices=selection.VERDICTS, required=True)
+    s.add_argument("--round", default="")
+    s.add_argument("--by", default="rl-hypothesis-reviewer")
+    with_lab(sub, "fdr")
     s = sub.add_parser("env")
     s.add_argument("file")
     s.add_argument("--stage", choices=("sim", "verify", "all"), default="all")
@@ -370,8 +377,8 @@ def main(argv=None) -> int:
     a.command = command
     return {"register": protocol.cmd_register, "run": protocol.cmd_run, "judge": protocol.cmd_judge,
             "check": protocol.cmd_check, "holdout": protocol.cmd_holdout, "brief": protocol.cmd_brief,
-            "stats": selection.cmd_stats, "compare": selection.cmd_compare, "best": selection.cmd_best,
-            "fdr": selection.cmd_fdr,
+            "settings": selection.cmd_settings, "stats": selection.cmd_stats, "compare": selection.cmd_compare,
+            "review": selection.cmd_review, "best": selection.cmd_best, "fdr": selection.cmd_fdr,
             "env": cmd_env, "trace": cmd_trace, "truncate": cmd_truncate, "sample": cmd_sample,
             "repro": cmd_repro}[a.cmd](a)
 
