@@ -1,19 +1,19 @@
 # Knowledge base and context router
 
-The context window is the scarcest resource in a long session. autolearn spends it on
+The context window is the scarcest resource in a long session. research-lab spends it on
 pointers, not content:
 
 | Layer | What enters the context | Budget |
 |---|---|---|
 | `CLAUDE.md` | a routing table: "when X, read/use Y" | keep it short; content lives elsewhere |
 | SessionStart brief | counts and paths: rules, repo lessons, inbox, proposals, radar age | < 700 chars |
-| `kb-router` | the sections retrieval graded as an answer, or the matching topic blocks | 8 KB, more goes to a subagent |
+| `knowledge-search` | the sections retrieval graded as an answer, or the matching topic blocks | 8 KB, more goes to a subagent |
 | Pipeline briefs | paths and facts, never pasted files | `CONTEXT.md` 8 KB, `CODEMAP.md` 10 KB |
 | Test output | failures and the summary line | 120 lines |
 
 ## Building the base and the router together
 
-`kb-ingest` is the only writer of the knowledge base, and its rule is: **no page without a
+`knowledge-ingest` is the only writer of the knowledge base, and its rule is: **no page without a
 router entry, no router entry without a page or a source.**
 
 1. Read the source cheaply (subagent for anything large).
@@ -26,14 +26,14 @@ router entry, no router entry without a page or a source.**
 5. Commit.
 
 Where pages come from:
-- `kb-ingest repo` in any repository (the session brief offers it when a repo has no page),
+- `knowledge-ingest repo` in any repository (the session brief offers it when a repo has no page),
 - `al-docs-scout`'s "New for the topic map" at the end of every `/feature` run,
 - any "remember this" in conversation,
 - repeated router misses surfaced by `/learn`.
 
 ## Retrieval (RAG): one command, every technique
 
-`kb_rag.py` (in `skills/research/scripts/`, engine in `ragkit/`) is the default way to read the
+`kb_rag.py` (in `skills/knowledge-search/scripts/`, engine in `ragkit/`) is the default way to read the
 knowledge base. It runs on the standard library and uses a model when it finds one. Nothing is
 configured per query: each technique below decides when it applies.
 
@@ -45,16 +45,16 @@ configured per query: each technique below decides when it applies.
    the 128-token window of MiniLM models. A section that fits stays one child.
 2. **Contextual retrieval.** Each child is embedded and indexed with what the cut took away: the
    document's title, a `summary:` line or its first sentence, the heading path and the section's
-   lead sentence. With an LLM (`AUTOLEARN_LLM`) a sentence written for that chunk replaces this, in
+   lead sentence. With an LLM (`RESEARCH_LAB_LLM`) a sentence written for that chunk replaces this, in
    the background, at most 60 chunks per run; the result is cached by the chunk's content.
 3. **Embeddings.** A multilingual sentence model through `fastembed` or `sentence-transformers`
-   (`kb_rag.py setup`, `$AUTOLEARN_EMBED`, `$AUTOLEARN_EMBED_MODEL`), otherwise stdlib signed hashing of stems and
+   (`kb_rag.py setup`, `$RESEARCH_LAB_EMBED`, `$RESEARCH_LAB_EMBED_MODEL`), otherwise stdlib signed hashing of stems and
    character trigrams. Changing the backend rebuilds the store and keeps its roots.
 4. **Late chunking.** When the model exposes token vectors and sees at least 256 tokens at once,
    the whole document goes through it (in windows overlapping by a quarter if it is longer), and
    each child's vector is the mean of its tokens, combined with its contextual vector. Below 256
    tokens there is little document left to give, so it stays off; the default MiniLM has 128.
-   `AUTOLEARN_LATE=off` disables it.
+   `RESEARCH_LAB_LATE=off` disables it.
 5. **Knowledge graph.** The same chunks also yield entities (names, ids, paths, `code`) and typed
    relations (`depends_on`, `uses`, `causes`, `part_of`, `owned_by`, `replaces`, arrows) in the
    languages of `ragkit/lang.json`; an LLM can add more. They are stored per chunk, so the graph
@@ -95,7 +95,7 @@ The route, its reason and the verdict open every answer. `--mode` overrides the 
 1. **Fusion.** Reciprocal rank fusion of the child vector, section vector (models only), child BM25, section
    BM25 and (when routed) graph rankings. BM25 searches children together with their contextual prefix, at half weight.
 2. **Rerank.** A cross-encoder when one is installed and cached: the background `index` fetches it
-   and a search never waits for a download (`$AUTOLEARN_RERANK`, `$AUTOLEARN_RERANK_MODEL`). An
+   and a search never waits for a download (`$RESEARCH_LAB_RERANK`, `$RESEARCH_LAB_RERANK_MODEL`). An
    English-only model sits out on questions and sections in other languages, and it reads the matched chunk: on
    whole sections the same model did worse than no cross-encoder. The built-in reranker always runs and weighs coverage
    near the match, proximity, phrase, literal word form, headings, fusion and cosine. Sections far
@@ -114,7 +114,7 @@ The route, its reason and the verdict open every answer. `--mode` overrides the 
 
    Before that verdict stands, one correction runs inside the base: a compound question is split so
    that the unanswered part can be named, and terms the base never saw are repaired to the closest vocabulary term, which
-   covers inflections and typos. The scripts make no web requests themselves: `kb-router` tells Claude to.
+   covers inflections and typos. The scripts make no web requests themselves: `knowledge-search` tells Claude to.
 4. **Graph evidence.** A stated link answers a question about links, and only that. Whatever else the question asks must
    be in the evidence too, or the verdict is `AMBIGUOUS` and names it. Negated and planned statements (`no longer depends
    on`, `might later use`) do not become edges. Two entities without a stated path are reported as such.
@@ -133,24 +133,24 @@ Lines starting with `| ` in the output quote the notes, so that a note cannot pa
 
 `kb_rag.py setup` builds a virtualenv in the data directory, installs `fastembed` (system pythons refuse `pip install`
 under PEP 668), downloads the model and remembers that python. Every later run moves into it on start, whichever python
-called the script, so skills and the hook need no changes. `AUTOLEARN_PYTHON` names another interpreter. Without the
+called the script, so skills and the hook need no changes. `RESEARCH_LAB_PYTHON` names another interpreter. Without the
 model's python a store built with it is searched by words only and new notes stay out until it runs: `kb_rag.py index`
 then exits 1 and says which python to use. A search never downloads a model, and never waits for a rebuild with
 one: that runs in the background while the last snapshot answers by words.
 
 ### Limits and upkeep
 
-Files over 2 MB are not indexed (`AUTOLEARN_MAX_FILE_MB`), and searches and `status` say so. Notes that are not UTF-8 are
+Files over 2 MB are not indexed (`RESEARCH_LAB_MAX_FILE_MB`), and searches and `status` say so. Notes that are not UTF-8 are
 read as a legacy encoding, and `status` lists them. A store that cannot be read is rebuilt. A lock is taken over when its
 process is gone or it has been quiet for ten minutes. A folder indexed once stays in every later search until
 `kb_rag.py forget --root DIR`. Upgrading adds the index to the data directory's `.gitignore` and stops tracking it.
 
 ### Optional LLM
 
-`$AUTOLEARN_LLM` = `auto` (default: an Ollama server on this machine, if one is running with a chat
+`$RESEARCH_LAB_LLM` = `auto` (default: an Ollama server on this machine, if one is running with a chat
 model) | `ollama[:model]` | `claude[:model]` | `off`. It runs only in `index`, `watch` and `events`, never
 in a search. `claude` runs the Claude Code CLI with no tools and no customisations and sends the changed
-documents to the model, so it is never picked by itself (`AUTOLEARN_CLAUDE_BIN` names the binary if it is
+documents to the model, so it is never picked by itself (`RESEARCH_LAB_CLAUDE_BIN` names the binary if it is
 not on `PATH`). Documents go in fenced as data, and the answers are validated and used only as search
 text and graph edges.
 
@@ -181,7 +181,7 @@ candidates that are shown alongside them, because Claude reads both.
 
 - **The cross-encoder is not a clear win.** On the independent set it scored 49 / 55 against 50 / 57 without it, weak
   candidates counted in both, and it
-  raised false refusals from 4 to 7. It helped on this repo's English docs. `AUTOLEARN_RERANK=off` turns it off.
+  raised false refusals from 4 to 7. It helped on this repo's English docs. `RESEARCH_LAB_RERANK=off` turns it off.
 - **Late chunking is not a clear win either.** On `bge-small-en-v1.5` it made no measurable difference on the independent
   set and cost about twice the CPU. With the default MiniLM it stays off.
 - **`bge-small-en-v1.5` refuses less** (10 of 22): the noise floor brings its cosines closer to MiniLM's, not level with them.
@@ -192,7 +192,7 @@ candidates that are shown alongside them, because Claude reads both.
   5 are found.
 
 Verified on real models: `kb_rag.py setup` and `fastembed` with two embedding models and a cross-encoder. Checked against
-stand-ins only: `sentence-transformers`, Ollama and `AUTOLEARN_LLM=claude`. The tests run on macOS and Linux; Windows has not
+stand-ins only: `sentence-transformers`, Ollama and `RESEARCH_LAB_LLM=claude`. The tests run on macOS and Linux; Windows has not
 been run. Real people's notes have not been measured: use `scripts/rag_eval.py` on your own.
 
 ## Routing
@@ -217,4 +217,4 @@ been run. Real people's notes have not been measured: use `scripts/rag_eval.py` 
 ## Precedence
 
 Code > ADRs / DECISIONS.md > repo docs > knowledge base > wiki > chat. When the knowledge base
-disagrees with the repo, the router says so and offers a fix through `kb-ingest`.
+disagrees with the repo, the router says so and offers a fix through `knowledge-ingest`.

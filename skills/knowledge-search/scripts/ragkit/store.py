@@ -34,7 +34,7 @@ EVENT_MAX_BYTES = 1_000_000
 
 def max_file_bytes() -> int:
     try:
-        return int(float(os.environ["AUTOLEARN_MAX_FILE_MB"]) * 1_000_000)
+        return int(float(os.environ["RESEARCH_LAB_MAX_FILE_MB"]) * 1_000_000)
     except (KeyError, ValueError):
         return MAX_FILE_BYTES
 
@@ -245,7 +245,7 @@ class Store:
                 events.append({"op": "delete", "path": key, "added": 0, "removed": len(entry["chunks"]), "kept": 0,
                                "embedded": 0})
         for key in sorted(set(skipped) - set(self.meta.get("skipped", []))):
-            print(f"! {key} is over {limit // 1_000_000} MB and was not indexed (AUTOLEARN_MAX_FILE_MB changes the limit)",
+            print(f"! {key} is over {limit // 1_000_000} MB and was not indexed (RESEARCH_LAB_MAX_FILE_MB changes the limit)",
                   file=sys.stderr)
         touched = touched or skipped != self.meta.get("skipped", [])
         self.meta["skipped"] = skipped

@@ -13,7 +13,7 @@ import threading
 import unittest
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-ENGINE = ROOT / "skills" / "research" / "scripts" / "kb_rag.py"
+ENGINE = ROOT / "skills" / "knowledge-search" / "scripts" / "kb_rag.py"
 CORPUS = ROOT / "tests" / "fixtures" / "rag" / "kb"
 sys.path.insert(0, str(ENGINE.parent))
 
@@ -137,7 +137,7 @@ class RagCase(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.dir = pathlib.Path(self.tmp.name)
-        self.home = self.dir / "autolearn"
+        self.home = self.dir / "research-lab"
         self.kb = self.home / "knowledge"
         if self.copy_corpus:
             shutil.copytree(CORPUS, self.kb)
@@ -149,8 +149,8 @@ class RagCase(unittest.TestCase):
         self.tmp.cleanup()
 
     def env(self, **extra):
-        keep = {k: v for k, v in os.environ.items() if not k.startswith(("AUTOLEARN_", "OLLAMA_", "FAKE_"))}
-        return {**keep, "AUTOLEARN_HOME": str(self.home), "AUTOLEARN_EMBED": "hash", "AUTOLEARN_LLM": "off",
+        keep = {k: v for k, v in os.environ.items() if not k.startswith(("RESEARCH_LAB_", "OLLAMA_", "FAKE_"))}
+        return {**keep, "RESEARCH_LAB_HOME": str(self.home), "RESEARCH_LAB_EMBED": "hash", "RESEARCH_LAB_LLM": "off",
                 **self.env_extra, **extra}
 
     def run_engine(self, *args, expect=0, stdin=None, **env):

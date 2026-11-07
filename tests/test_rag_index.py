@@ -259,7 +259,7 @@ class ChangeDataCapture(RagCase):
             str(path.resolve()): {"mtime": 1.0, "chunks": [
                 {"s": 3, "e": 6, "head": "Releases > Reverting", "tok": ["redep", "previ"], "htok": ["relea"], "row": 0}]}}}))
         (rag / "vectors.f32").write_bytes(b"\0" * 8)
-        out = self.run_engine("search", "--no-log", "redeploy", "previous", AUTOLEARN_EMBED="auto")
+        out = self.run_engine("search", "--no-log", "redeploy", "previous", RESEARCH_LAB_EMBED="auto")
         self.assertIn("notes/releases.md", out)
         self.assertIn("words only", out)
         self.assertEqual(self.meta()["backend"], "fastembed:some/model")
@@ -329,7 +329,7 @@ class ConcurrentWriters(RagCase):
 
     def test_failed_refresh_keeps_the_last_snapshot(self):
         self.fake_models()
-        self.env_extra.update(AUTOLEARN_EMBED="fastembed", AUTOLEARN_RERANK="off")
+        self.env_extra.update(RESEARCH_LAB_EMBED="fastembed", RESEARCH_LAB_RERANK="off")
         self.run_engine("index")
         self.write("notes/new.md", "# New\n\n## Fact\n\nA fact that needs embedding now.\n")
         out = self.run_engine("search", "--no-log", "redeploy", "previous", "container", FAKE_EMBED_FAIL="1")
@@ -446,7 +446,7 @@ class StreamingEvents(RagCase):
         meta = self.meta()
         meta["backend"] = "fastembed:some/model"
         meta_path.write_text(json.dumps(meta), encoding="utf-8")
-        self.run_engine("events", stdin='{"op": "upsert", "id": "n", "text": "Some fact."}', AUTOLEARN_EMBED="auto")
+        self.run_engine("events", stdin='{"op": "upsert", "id": "n", "text": "Some fact."}', RESEARCH_LAB_EMBED="auto")
         self.assertIn("cannot load", self.stderr)
 
     def test_watch_reports_a_change_made_outside_claude_code(self):
@@ -502,7 +502,7 @@ class LateChunking(RagCase):
     def store_on(self, window):
         self.fake_models()
         self.long_doc()
-        self.env_extra.update(AUTOLEARN_EMBED="auto", FAKE_WINDOW=str(window), AUTOLEARN_RERANK="off")
+        self.env_extra.update(RESEARCH_LAB_EMBED="auto", FAKE_WINDOW=str(window), RESEARCH_LAB_RERANK="off")
         self.run_engine("index")
         return self.meta()
 
@@ -517,7 +517,7 @@ class LateChunking(RagCase):
     def test_it_changes_the_vectors_and_can_be_turned_off(self):
         self.store_on(512)
         on = store_mod.Store(self.kb).vec.tolist()
-        self.env_extra["AUTOLEARN_LATE"] = "off"
+        self.env_extra["RESEARCH_LAB_LATE"] = "off"
         self.run_engine("index")
         self.assertFalse(self.meta()["late"])
         self.assertNotEqual(store_mod.Store(self.kb).vec.tolist(), on)
@@ -534,7 +534,7 @@ class LateChunking(RagCase):
     def test_sentence_transformers_path_also_does_it(self):
         self.fake_sentence_transformers()
         self.long_doc()
-        self.env_extra.update(AUTOLEARN_EMBED="auto", FAKE_WINDOW="512", AUTOLEARN_RERANK="off")
+        self.env_extra.update(RESEARCH_LAB_EMBED="auto", FAKE_WINDOW="512", RESEARCH_LAB_RERANK="off")
         self.run_engine("index")
         meta = self.meta()
         self.assertTrue(meta["backend"].startswith("st:"))
@@ -557,14 +557,14 @@ class LlmEnrichment(RagCase):
              for i in range(n)])
         self.stub = StubOllama(lambda prompt: self.answers(self.listed(prompt).count("\n")))
         self.addCleanup(self.stub.close)
-        self.env_extra.update(AUTOLEARN_LLM="auto", OLLAMA_HOST=self.stub.host)
+        self.env_extra.update(RESEARCH_LAB_LLM="auto", OLLAMA_HOST=self.stub.host)
 
     @staticmethod
     def listed(prompt):
         return prompt.rsplit("Chunks:\n", 1)[1].rsplit("</data-", 1)[0]
 
     def test_llm_context_makes_a_chunk_findable_by_words_it_does_not_contain(self):
-        self.assertIn("No chunk matches", self.run_engine("search", "--no-log", "zorg", AUTOLEARN_LLM="off"))
+        self.assertIn("No chunk matches", self.run_engine("search", "--no-log", "zorg", RESEARCH_LAB_LLM="off"))
         self.run_engine("index")
         self.assertIn("notes/a.md", self.run_engine("search", "--no-log", "zorg"))
         self.assertEqual(self.stub.prompts[0]["model"], "tiny:1b", "the smallest chat model, not an embedding one")
@@ -591,8 +591,8 @@ class LlmEnrichment(RagCase):
         self.assertIn("--uses--> Vault", self.run_engine("graph", "Zorg"))
         doc = self.kb / "notes" / "a.md"
         doc.write_text(doc.read_text().replace("Something else", "Another thing"))
-        self.run_engine("index", AUTOLEARN_LLM="off")
-        out = self.run_engine("graph", "Zorg", AUTOLEARN_LLM="off")
+        self.run_engine("index", RESEARCH_LAB_LLM="off")
+        out = self.run_engine("graph", "Zorg", RESEARCH_LAB_LLM="off")
         self.assertIn("--uses--> Vault", out)
 
     def test_document_goes_inside_a_fence_it_cannot_forge(self):
@@ -632,7 +632,7 @@ class LlmEnrichment(RagCase):
         self.run_engine("index")
         self.assertIn("stopped", self.stderr)
         self.assertEqual(len(self.stub.prompts), 1, "no point in trying the next file")
-        self.assertIn("notes/b.md", self.run_engine("search", "--no-log", "another", "sentence", AUTOLEARN_LLM="off"))
+        self.assertIn("notes/b.md", self.run_engine("search", "--no-log", "another", "sentence", RESEARCH_LAB_LLM="off"))
 
     def test_local_server_is_reached_past_a_proxy(self):
         self.run_engine("index", HTTP_PROXY="http://127.0.0.1:9", http_proxy="http://127.0.0.1:9")
@@ -674,7 +674,7 @@ class LlmEnrichment(RagCase):
 
 class LlmSelection(unittest.TestCase):
     def with_env(self, **env):
-        keep = {k: os.environ.pop(k) for k in list(os.environ) if k.startswith(("AUTOLEARN_", "OLLAMA_"))}
+        keep = {k: os.environ.pop(k) for k in list(os.environ) if k.startswith(("RESEARCH_LAB_", "OLLAMA_"))}
         os.environ.update(env)
         self.addCleanup(lambda: (os.environ.update(keep), [os.environ.pop(k, None) for k in env]))
 
@@ -685,7 +685,7 @@ class LlmSelection(unittest.TestCase):
         self.assertLess(time.time() - started, 0.3, "must decide without touching the network")
 
     def test_off_means_off(self):
-        self.with_env(AUTOLEARN_LLM="off")
+        self.with_env(RESEARCH_LAB_LLM="off")
         self.assertIsNone(enrich.enricher())
 
     def test_no_server_means_no_llm(self):
@@ -695,7 +695,7 @@ class LlmSelection(unittest.TestCase):
     def test_claude_is_opt_in_and_runs_without_tools(self):
         self.assertIsNone(self._auto_with_fake_claude())
         script = self.fake_claude()
-        self.with_env(AUTOLEARN_LLM="claude", AUTOLEARN_CLAUDE_BIN=str(script))
+        self.with_env(RESEARCH_LAB_LLM="claude", RESEARCH_LAB_CLAUDE_BIN=str(script))
         helper = enrich.enricher()
         self.assertEqual(helper.id, "claude:haiku")
         answers = helper.enrich("T", "doc", ["one", "two"])
@@ -723,7 +723,7 @@ class LlmSelection(unittest.TestCase):
         return script
 
     def test_missing_claude_binary_is_reported(self):
-        self.with_env(AUTOLEARN_LLM="claude", AUTOLEARN_CLAUDE_BIN="/nonexistent/claude")
+        self.with_env(RESEARCH_LAB_LLM="claude", RESEARCH_LAB_CLAUDE_BIN="/nonexistent/claude")
         self.assertIsNone(enrich.enricher())
 
 

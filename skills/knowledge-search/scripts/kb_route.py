@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Deterministic router over the autolearn knowledge base. Standard library only.
+"""Deterministic router over the research-lab knowledge base. Standard library only.
 
     kb_route.py refund webhook stripe            # route keywords, log the result
     kb_route.py --no-log --budget 12000 refunds  # dry look, bigger budget
@@ -22,8 +22,8 @@ BUDGET = 8000
 
 
 def kb_dir() -> pathlib.Path:
-    env = os.environ.get("AUTOLEARN_HOME")
-    base = pathlib.Path(env).expanduser() if env else pathlib.Path.home() / ".claude" / "autolearn"
+    env = os.environ.get("RESEARCH_LAB_HOME")
+    base = pathlib.Path(env).expanduser() if env else pathlib.Path.home() / ".claude" / "research-lab"
     return base / "knowledge"
 
 
@@ -90,7 +90,7 @@ def main() -> int:
     areas = sorted((a.kb / "map").glob("*.md")) if (a.kb / "map").exists() else []
     maps = [m for m in [a.kb / "topic-map.md", *areas] if m.exists()]
     if not maps:
-        print(f"No topic map at {a.kb / 'topic-map.md'}. Build one with the kb-ingest skill.")
+        print(f"No topic map at {a.kb / 'topic-map.md'}. Build one with the knowledge-ingest skill.")
         return 0
 
     ranked = sorted(((score(h, b, words), h, b, n, m) for m in maps for h, b, n in blocks(m)),
@@ -115,11 +115,11 @@ def main() -> int:
                 rel, _, anchor = ptr.partition("#")
                 path = a.kb / rel.strip()
                 if not path.exists():
-                    print(f"   ! {ptr}: file missing (fix with kb-ingest)")
+                    print(f"   ! {ptr}: file missing (fix with knowledge-ingest)")
                     continue
                 rng = section_range(path, anchor.strip())
                 if rng is None:
-                    print(f"   ! {ptr}: section not found (fix with kb-ingest)")
+                    print(f"   ! {ptr}: section not found (fix with knowledge-ingest)")
                     continue
                 resolved_any = True
                 s, e, size = rng

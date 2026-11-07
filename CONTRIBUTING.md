@@ -1,6 +1,6 @@
 # Contributing
 
-Thanks for helping autolearn learn. The most valuable contributions come from real use:
+Thanks for helping research-lab learn. The most valuable contributions come from real use:
 
 - **Feedback patterns** in `templates/feedback-patterns.json`: better phrasings, fewer false
   positives, new languages. Every language needs one example per signal kind plus a `neutral`
@@ -28,7 +28,7 @@ Thanks for helping autolearn learn. The most valuable contributions come from re
 
 Run `./scripts/set-owner.sh <github-user> "<Your Name>"` to replace the `YOUR_GITHUB_USER` /
 `YOUR_NAME` placeholders in the README, manifests and license, then `./scripts/publish-github.sh
-<owner>/autolearn` for the description and topics.
+<owner>/research-lab` for the description and topics.
 
 ## Releasing
 

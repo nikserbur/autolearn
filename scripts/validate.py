@@ -40,13 +40,13 @@ def check_agents() -> None:
         fm, rel = frontmatter(f), f.relative_to(ROOT)
         if fm.get("name") != f.stem:
             errors.append(f"{rel}: name '{fm.get('name')}' != file name")
-        if not f.stem.startswith("al-"):
-            errors.append(f"{rel}: agent names start with 'al-' so they never collide with other setups")
+        if not f.stem.startswith("rl-"):
+            errors.append(f"{rel}: agent names start with 'rl-' so they never collide with other setups")
         if not fm.get("description"):
             errors.append(f"{rel}: missing description")
         if fm.get("model") and fm["model"] not in MODELS:
             errors.append(f"{rel}: unknown model '{fm['model']}'")
-        for script in re.findall(r"hooks/autolearn/(\w+\.py)", f.read_text(encoding="utf-8")):
+        for script in re.findall(r"hooks/research-lab/(\w+\.py)", f.read_text(encoding="utf-8")):
             if not (ROOT / "hooks" / script).exists():
                 errors.append(f"{rel}: hook script {script} not in hooks/")
 
@@ -137,7 +137,7 @@ def check_english_only() -> None:
 
 
 def check_retrieval_languages() -> None:
-    path = ROOT / "skills" / "research" / "scripts" / "ragkit" / "lang.json"
+    path = ROOT / "skills" / "knowledge-search" / "scripts" / "ragkit" / "lang.json"
     try:
         langs = json.loads(path.read_text(encoding="utf-8"))["languages"]
     except (OSError, ValueError, KeyError) as e:

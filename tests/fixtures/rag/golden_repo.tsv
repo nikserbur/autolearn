@@ -1,7 +1,7 @@
 kind	question	expected
 local	how do I disable feedback capture	README.md|docs/hooks.md|SECURITY.md
 local	what happens when the verify command keeps failing and max_blocks is reached	docs/hooks.md|agents/al-implementer.md
-local	where do my team's checklists go	README.md|skills/kb-router/SKILL.md
+local	where do my team's checklists go	README.md|skills/knowledge-search/SKILL.md
 local	how do I publish a release so plugin users receive the update	CONTRIBUTING.md|CHANGELOG.md
 local	how does the escape analyst find the first stage that missed a bug	agents/al-escape-analyst.md|docs/learning-loop.md|skills/retro/SKILL.md
 local	what stops the installer from overwriting my own skills	README.md
@@ -9,25 +9,25 @@ local	which commands does the planner guard deny	docs/hooks.md|agents/al-planner
 local	when does the feature pipeline run the research phase	skills/feature/SKILL.md|docs/pipeline.md|README.md
 local	how do I report a security vulnerability	SECURITY.md
 local	what does the merge gate check before saying merge	agents/al-merge-gate.md|skills/merge-check/SKILL.md
-local	what happens to repeated router misses	docs/learning-loop.md|skills/learn/SKILL.md|skills/kb-router/SKILL.md
-local	how big can a topic page get before it must be split	docs/knowledge-router.md|skills/kb-ingest/SKILL.md
+local	what happens to repeated router misses	docs/learning-loop.md|skills/learn/SKILL.md|skills/knowledge-search/SKILL.md
+local	how big can a topic page get before it must be split	docs/knowledge-router.md|skills/knowledge-ingest/SKILL.md
 local	which sources does skill radar scout for new skills	skills/skill-radar/SKILL.md|agents/al-skill-scout.md|README.md
-local	which model runs the hypothesis reviewer	agents/al-hypothesis-reviewer.md|docs/components.md
-local	how is the pass criterion protected from tuning on test windows	skills/research/SKILL.md|agents/al-hypothesis-reviewer.md
+local	which model runs the hypothesis reviewer	agents/rl-hypothesis-reviewer.md|docs/components.md
+local	how is the pass criterion protected from tuning on test windows	skills/research/SKILL.md|agents/rl-hypothesis-reviewer.md
 local	how does a lesson become a proposal	docs/learning-loop.md|README.md|agents/al-lessons-keeper.md
 local	what does the test output filter do with long test logs	docs/hooks.md
 local	why do plugin agents register gates in hooks.json	docs/hooks.md|README.md
 local	how are contradicted lessons handled	docs/learning-loop.md|README.md|agents/al-lessons-keeper.md
-local	what is AUTOLEARN_PYTHON for	docs/hooks.md|docs/knowledge-router.md|skills/research/SKILL.md|hooks/kb_autoindex.py
+local	what is RESEARCH_LAB_PYTHON for	docs/hooks.md|docs/knowledge-router.md|skills/research/SKILL.md|hooks/kb_autoindex.py
 local	what is in the deep mode critique rounds	README.md|docs/pipeline.md|skills/feature/SKILL.md
-local	what does kb_lint treat as errors	docs/knowledge-router.md|skills/kb-ingest/SKILL.md
+local	what does kb_lint treat as errors	docs/knowledge-router.md|skills/knowledge-ingest/SKILL.md
 local	how many languages does feedback capture understand	README.md|docs/hooks.md
 local	does the feedback hook store my prompts	README.md|SECURITY.md|docs/hooks.md
 xlang	как отключить автоиндексацию базы знаний	docs/hooks.md
 xlang	как поменять модель эмбеддингов	skills/research/SKILL.md|docs/knowledge-router.md
 xlang	что делать если результат эксперимента невалиден	skills/research/SKILL.md
 xlang	как отчитаться об уязвимости	SECURITY.md
-xlang	где хранятся мои чеклисты команды	README.md|skills/kb-router/SKILL.md
+xlang	где хранятся мои чеклисты команды	README.md|skills/knowledge-search/SKILL.md
 ood	how to configure kubernetes ingress	-
 ood	what is our vacation policy	-
 ood	postgres vacuum tuning parameters	-

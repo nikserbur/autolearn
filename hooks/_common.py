@@ -1,4 +1,4 @@
-"""Shared helpers for autolearn hooks. Standard library only, Python 3.9+."""
+"""Shared helpers for research-lab hooks. Standard library only, Python 3.9+."""
 from __future__ import annotations
 
 import json
@@ -12,9 +12,9 @@ WRAPPERS = {"sudo", "env", "time", "nice", "nohup", "command", "exec"}
 
 
 def home() -> pathlib.Path:
-    """Data directory: $AUTOLEARN_HOME or ~/.claude/autolearn."""
-    env = os.environ.get("AUTOLEARN_HOME")
-    return pathlib.Path(env).expanduser() if env else pathlib.Path.home() / ".claude" / "autolearn"
+    """Data directory: $RESEARCH_LAB_HOME or ~/.claude/research-lab."""
+    env = os.environ.get("RESEARCH_LAB_HOME")
+    return pathlib.Path(env).expanduser() if env else pathlib.Path.home() / ".claude" / "research-lab"
 
 
 def read_payload() -> dict:

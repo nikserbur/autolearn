@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # One-time GitHub setup for the maintainer: description, homepage and topics (needs the gh CLI,
 # logged in). Run after the repository exists on GitHub:
-#   ./scripts/publish-github.sh <github-user>/autolearn
+#   ./scripts/publish-github.sh <github-user>/research-lab
 set -euo pipefail
-repo="${1:?usage: $0 <owner>/autolearn}"
+repo="${1:?usage: $0 <owner>/research-lab}"
 
 gh repo edit "$repo" \
   --description "Missed a bug? It grows a reviewer for it. A self-learning Claude Code plugin: plan, TDD, review and merge-gate pipeline that turns your corrections and escaped bugs into lessons, tests and new reviewer agents, plus a routed local knowledge base." \

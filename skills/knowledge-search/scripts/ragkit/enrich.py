@@ -1,6 +1,6 @@
 """Optional small LLM for Contextual Retrieval and graph extraction at index time.
 
-$AUTOLEARN_LLM = auto | off | ollama[:model] | claude[:model]. `auto` uses only an Ollama server on
+$RESEARCH_LAB_LLM = auto | off | ollama[:model] | claude[:model]. `auto` uses only an Ollama server on
 this machine, so nothing leaves it without being asked for; `claude` runs the Claude Code CLI with
 no tools and no customisations and sends the changed documents to the model, so it is opt-in.
 Without an LLM the heuristic context and extraction from chunks.py and graph.py stay in place.
@@ -116,13 +116,13 @@ def _ollama(base: str, model: str) -> Enricher:
 
 
 def _claude(model: str):
-    binary = os.environ.get("AUTOLEARN_CLAUDE_BIN") or shutil.which("claude")
+    binary = os.environ.get("RESEARCH_LAB_CLAUDE_BIN") or shutil.which("claude")
     if not binary or not pathlib.Path(binary).exists():
-        print("! AUTOLEARN_LLM=claude: no claude binary on PATH (set AUTOLEARN_CLAUDE_BIN)", file=sys.stderr)
+        print("! RESEARCH_LAB_LLM=claude: no claude binary on PATH (set RESEARCH_LAB_CLAUDE_BIN)", file=sys.stderr)
         return None
     cmd = [binary, "-p", "--safe-mode", "--model", model, "--tools", "", "--no-session-persistence",
            "--output-format", "text"]
-    env = dict(os.environ, AUTOLEARN_AUTOINDEX="0", AUTOLEARN_CAPTURE="0")
+    env = dict(os.environ, RESEARCH_LAB_AUTOINDEX="0", RESEARCH_LAB_CAPTURE="0")
 
     def call(prompt: str) -> str:
         proc = subprocess.run(cmd, input=prompt, capture_output=True, text=True, timeout=300, env=env)
@@ -134,22 +134,22 @@ def _claude(model: str):
 
 def enricher():
     """The configured LLM helper, or None. Auto never reaches beyond this machine."""
-    want = os.environ.get("AUTOLEARN_LLM", "auto")
+    want = os.environ.get("RESEARCH_LAB_LLM", "auto")
     kind, _, model = want.partition(":")
     if kind == "off":
         return None
     if kind == "claude":
         return _claude(model or "haiku")
     if kind not in ("auto", "ollama"):
-        print(f"! unknown AUTOLEARN_LLM={want}; no LLM enrichment", file=sys.stderr)
+        print(f"! unknown RESEARCH_LAB_LLM={want}; no LLM enrichment", file=sys.stderr)
         return None
     base = _ollama_base()
     if kind == "auto" and not _is_loopback(base):
         return None
     try:
-        chosen = _ollama_model(base, model or os.environ.get("AUTOLEARN_LLM_MODEL", ""))
+        chosen = _ollama_model(base, model or os.environ.get("RESEARCH_LAB_LLM_MODEL", ""))
     except (OSError, ValueError, urllib.error.URLError) as e:
         if kind == "ollama":
-            print(f"! AUTOLEARN_LLM=ollama: server at {base} unavailable ({e})", file=sys.stderr)
+            print(f"! RESEARCH_LAB_LLM=ollama: server at {base} unavailable ({e})", file=sys.stderr)
         return None
     return _ollama(base, chosen) if chosen else None

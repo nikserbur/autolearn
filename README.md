@@ -1,12 +1,12 @@
 <div align="center">
 
-# autolearn
+# research-lab
 
-**Missed a bug? autolearn grows a reviewer for it.**
+**Missed a bug? research-lab grows a reviewer for it.**
 
 A self-learning harness for Claude Code that turns escaped bugs, merge-gate findings and your corrections into evidence-backed lessons, regression tests and new reviewer agents.
 
-[![CI](https://github.com/nikserbur/autolearn/actions/workflows/ci.yml/badge.svg)](https://github.com/nikserbur/autolearn/actions/workflows/ci.yml)
+[![CI](https://github.com/nikserbur/research-lab/actions/workflows/ci.yml/badge.svg)](https://github.com/nikserbur/research-lab/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Version](https://img.shields.io/badge/version-0.3.1-informational)](CHANGELOG.md)
 [![Claude Code plugin](https://img.shields.io/badge/Claude%20Code-plugin-D97757)](#install)
@@ -16,16 +16,16 @@ A self-learning harness for Claude Code that turns escaped bugs, merge-gate find
 ## Install
 
 ```text
-/plugin marketplace add nikserbur/autolearn
-/plugin install autolearn@autolearn
+/plugin marketplace add nikserbur/research-lab
+/plugin install research-lab@research-lab
 ```
 
-Restart Claude Code. The first session creates the data directory `~/.claude/autolearn/` (a git repo, so every lesson can be reverted). Prefer plain files in `~/.claude` instead of a plugin? Use the [install script](#install-script).
+Restart Claude Code. The first session creates the data directory `~/.claude/research-lab/` (a git repo, so every lesson can be reverted). Prefer plain files in `~/.claude` instead of a plugin? Use the [install script](#install-script).
 
 Then, in any repository:
 
 ```text
-/kb-ingest repo                  # build a knowledge page for this repo and register it in the router
+/knowledge-ingest repo                  # build a knowledge page for this repo and register it in the router
 /feature "add CSV export"        # plan -> critique -> red test -> code -> review -> merge gate
 /merge-check                     # fresh-context "can this be merged?"
 /learn                           # turn captured feedback into lessons and proposals
@@ -35,7 +35,7 @@ Then, in any repository:
 
 ## What it does
 
-Claude Code forgets. You correct the same habit for the third time, a reviewer misses the same class of bug twice, and your `CLAUDE.md` grows until nobody reads it. autolearn closes that loop:
+Claude Code forgets. You correct the same habit for the third time, a reviewer misses the same class of bug twice, and your `CLAUDE.md` grows until nobody reads it. research-lab closes that loop:
 
 ```text
 you    > /retro the daily totals were wrong in prod: naive vs tz-aware datetimes in src/reports
@@ -84,8 +84,8 @@ You do not have to remember which skill to call. Claude Code shows Claude every 
 flowchart LR
   U[Your message] --> M{Claude matches it<br/>against skill descriptions}
   M -- "research, test hypotheses,<br/>find what works, keep iterating" --> RS[/research/]
-  M -- "how does X work here,<br/>did we try Y, what did we decide" --> KR[kb-router<br/>RAG search]
-  M -- "remember this,<br/>add to the knowledge base" --> KI[kb-ingest]
+  M -- "how does X work here,<br/>did we try Y, what did we decide" --> KR[knowledge-search<br/>RAG search]
+  M -- "remember this,<br/>add to the knowledge base" --> KI[knowledge-ingest]
   M -- "/feature ... (command only)" --> F[/feature/]
   F -- "goal is the best variant" --> RS
   subgraph Hooks["Hooks: always, no decision involved"]
@@ -98,8 +98,8 @@ flowchart LR
 
 | Component | Starts | How |
 |---|---|---|
-| `research` | by itself or `/autolearn:research` | description match |
-| `kb-router`, `kb-ingest`, `colleague-message`, `pr-description` | by themselves | description match |
+| `research` | by itself or `/research-lab:research` | description match |
+| `knowledge-search`, `knowledge-ingest`, `colleague-message`, `pr-description` | by themselves | description match |
 | `/feature` | only by command | `disable-model-invocation`: a many-agent run never starts by accident; it calls the research phase itself when the goal is "the best" |
 | Hooks | always | Claude Code events, not model judgement |
 
@@ -179,7 +179,7 @@ flowchart TD
 | Research phase (search for the best only) | 1-2 rounds | up to 4 rounds, critique + review each |
 | Lessons | on signals | always |
 
-Artifacts (`SPEC.md`, `PLAN.md`, `PROGRESS.md`, `review/`) live in `~/.claude/autolearn/runs/`, so your repo only gets code, tests and docs. Team repositories get `/git-handoff` instead of agent commits. More in [docs/pipeline.md](docs/pipeline.md).
+Artifacts (`SPEC.md`, `PLAN.md`, `PROGRESS.md`, `review/`) live in `~/.claude/research-lab/runs/`, so your repo only gets code, tests and docs. Team repositories get `/git-handoff` instead of agent commits. More in [docs/pipeline.md](docs/pipeline.md).
 
 ## The research loop
 
@@ -209,8 +209,8 @@ Any language works; the skills match on meaning.
 
 ```text
 # research, explicit and guaranteed
-/autolearn:research "find an options market-making strategy that is net positive after fees on two-week windows" rounds 5
-/autolearn:research research/nifty-mm rounds 3        # continue an existing research folder
+/research-lab:research "find an options market-making strategy that is net positive after fees on two-week windows" rounds 5
+/research-lab:research research/nifty-mm rounds 3        # continue an existing research folder
 
 # research, in plain words (usually triggers it)
 Audit what the previous model proposed, then test hypotheses on per-side markout prediction.
@@ -223,12 +223,12 @@ No positional short-vol strategies. Two-week windows only, our standard pipeline
 # a plain feature: no research phase
 /feature "add CSV export to the reports page"
 
-# ask the knowledge base (kb-router, RAG): the route is chosen for each question
+# ask the knowledge base (knowledge-search, RAG): the route is chosen for each question
 What did we learn about the CatBoost training window? Did we try E07c?
 What breaks if Redis goes down?                                  # walks the entity graph
 What integration problems did all teams have in the third quarter?   # every document, what recurs
 
-# store a fact (kb-ingest; the hook embeds it right away)
+# store a fact (knowledge-ingest; the hook embeds it right away)
 Remember: back-of-queue sells are toxic, about -0.03 per lot.
 ```
 
@@ -269,13 +269,13 @@ There is nothing to choose. `kb_rag.py search <question>` works with no packages
 |---|---|---|---|
 | Hybrid search (vectors + BM25, RRF) | every question; an id shifts the weight to BM25 | hashed vectors | multilingual model via `fastembed` or `sentence-transformers` |
 | Decoupled chunking | a section is longer than a chunk; shorter ones stay whole. Search sees the small chunk, Claude gets its section | yes | |
-| Contextual retrieval | every chunk | title, summary, heading path, the section's lead sentence | a small LLM writes the context (`AUTOLEARN_LLM`) |
+| Contextual retrieval | every chunk | title, summary, heading path, the section's lead sentence | a small LLM writes the context (`RESEARCH_LAB_LLM`) |
 | Late chunking | the model exposes token vectors and sees at least 256 tokens | off | turns itself on, for example with `BAAI/bge-small-en-v1.5` |
 | Rerank | every non-exact question | built-in: coverage, proximity, phrase and literal match | cross-encoder; an English-only one sits out on other languages |
 | GraphRAG, local | a relation question about a known entity | relations from patterns | an LLM adds relations |
 | GraphRAG, global | a question about the whole base or a period, with 3+ documents | every document gets a voice, recurring terms, entity clusters, month, quarter and year filter. Always graded as a sample, never as complete | |
 | Corrective RAG | every result is graded; correction runs only when it is not `CORRECT` | splits compound questions, repairs inflections and typos, names what is missing, shows the closest sections to read before leaving for repo docs and the web | the embedding model vouches for paraphrases |
-| Faithfulness (Self-RAG) | `verify` on a draft with numbers or ids, or built on a partial result (a `kb-router` step) | numbers with units, ids, names, negation, citations; exit 1 on a failure | |
+| Faithfulness (Self-RAG) | `verify` on a draft with numbers or ids, or built on a partial result (a `knowledge-search` step) | numbers with units, ids, names, negation, citations; exit 1 on a failure | |
 | Streaming / CDC | every write (hook), every search, `watch`, `events` | re-embeds changed chunks only, journals each change | |
 
 | Independent set: 106 questions on notes the author had not seen | v0.2.3 | v0.3.0 | v0.3.1 |
@@ -291,10 +291,10 @@ There is nothing to choose. `kb_rag.py search <question>` works with no packages
 
 That set comes from a fresh session asked to break v0.3.0. It reversed the author's own claims: without packages the release found less than the engine before it, and it answered made-up ids and nonsense with `CORRECT`. v0.3.1 fixes what it found and takes its tests as acceptance tests, but the fixes were tuned on that same set, so it is no longer blind. What is left is plain in the table: without a model a third of answerable questions are graded `INCORRECT`, though the closest sections are shown for Claude to read; a question about the whole base finds well under half of the relevant documents, so its answer is always labelled a sample. On 24 questions about this repo's docs (top-1 / top-3 / MRR): no packages 0.83 / 1.00 / 0.91, MiniLM 0.79 / 1.00 / 0.89, MiniLM plus cross-encoder 0.88 / 0.92 / 0.92. Run [`scripts/rag_eval.py`](scripts/rag_eval.py) on your own notes before you rely on these. More in [docs/knowledge-router.md](docs/knowledge-router.md).
 
-`kb-ingest` never writes a page without a router entry, and `kb_lint.py` fails on any page the router cannot reach. Every page, and every research `KB/` folder, is indexed for retrieval.
+`knowledge-ingest` never writes a page without a router entry, and `kb_lint.py` fails on any page the router cannot reach. Every page, and every research `KB/` folder, is indexed for retrieval.
 
 ```text
-~/.claude/autolearn/knowledge/
+~/.claude/research-lab/knowledge/
 ├── topic-map.md          # the router: "## topic" blocks, up to 8 lines each
 ├── map/<area>.md         # second level, once the top map passes 25 KB
 ├── topics/<slug>.md      # distilled notes, every fact with its source
@@ -302,7 +302,7 @@ That set comes from a fresh session asked to break v0.3.0. It reversed the autho
 ├── required-docs.md      # checklists every task is checked against
 ├── .rag/                 # the index: meta.json, vectors.f32, changes.jsonl
 ├── .stream/              # documents received through `kb_rag.py events`
-└── .router-log.tsv       # hits and misses, feeding /learn and kb-ingest
+└── .router-log.tsv       # hits and misses, feeding /learn and knowledge-ingest
 ```
 
 ```markdown
@@ -318,14 +318,14 @@ updated: 2026-10-21
 ## What's inside
 
 - **Agents (13, all prefixed `al-`):** docs-scout, code-scout, planner, plan-critic, implementer, test-writer, code-reviewer, doc-writer, merge-gate, lessons-keeper, escape-analyst, skill-scout, hypothesis-reviewer.
-- **Skills (11):** `/feature`, `/research`, `/merge-check`, `/learn`, `/retro`, `/skill-radar`, `kb-router`, `kb-ingest`, `colleague-message`, `pr-description`, `git-handoff`.
+- **Skills (11):** `/feature`, `/research`, `/merge-check`, `/learn`, `/retro`, `/skill-radar`, `knowledge-search`, `knowledge-ingest`, `colleague-message`, `pr-description`, `git-handoff`.
 - **Hooks (7):** secret guard on commits, feedback capture, session brief, knowledge-base auto-indexing, verify gate, test-output filter, planner guard.
 - **Scripts (6):** knowledge retrieval (RAG), router and linter, lessons and proposals CLI, session miner, capability inventory.
 
 Every component with its model, trigger and purpose: [docs/components.md](docs/components.md).
 
 ```text
-~/.claude/autolearn/        your data, a git repo (runs/ and inbox/ are git-ignored)
+~/.claude/research-lab/        your data, a git repo (runs/ and inbox/ are git-ignored)
 ├── knowledge/              topic map, topics, projects, required docs
 ├── lessons/                <repo>.md, global.md, pipeline.md, runs.tsv
 ├── style/                  messages.md
@@ -339,23 +339,23 @@ Every component with its model, trigger and purpose: [docs/components.md](docs/c
 ## Install script
 
 ```bash
-git clone https://github.com/nikserbur/autolearn.git
-cd autolearn
+git clone https://github.com/nikserbur/research-lab.git
+cd research-lab
 ./install.sh --dry-run            # see what it would do
 ./install.sh --with-claude-md     # install + add a routing table to ~/.claude/CLAUDE.md
 ```
 
-If one of your own files has the same name as an autolearn skill, the installer stops before changing anything; `--force` replaces it, keeps a backup, and `./uninstall.sh` puts your original back. Hooks are merged into `settings.json` idempotently and uninstall moves files to a backup folder instead of deleting them. `--with-claude-md` adds only a routing table ([templates/CLAUDE.md](templates/CLAUDE.md)); a fuller personal example is in [docs/examples/CLAUDE.personal.md](docs/examples/CLAUDE.personal.md).
+If one of your own files has the same name as a research-lab skill, the installer stops before changing anything; `--force` replaces it, keeps a backup, and `./uninstall.sh` puts your original back. Hooks are merged into `settings.json` idempotently and uninstall moves files to a backup folder instead of deleting them. `--with-claude-md` adds only a routing table ([templates/CLAUDE.md](templates/CLAUDE.md)); a fuller personal example is in [docs/examples/CLAUDE.personal.md](docs/examples/CLAUDE.personal.md).
 
 > [!NOTE]
-> Use either the plugin or the install script, not both. Plugin agents cannot carry their own hooks, so in plugin mode the pipeline gates are registered in `hooks/hooks.json` and act only for `autolearn:al-*` agents. The install script uses agent-scoped hooks instead.
+> Use either the plugin or the install script, not both. Plugin agents cannot carry their own hooks, so in plugin mode the pipeline gates are registered in `hooks/hooks.json` and act only for `research-lab:al-*` agents. The install script uses agent-scoped hooks instead.
 
 ## Safety
 
 - **Human-approved self-modification.** Agents write only to the data directory. Prompts, skills, settings, `CLAUDE.md`, pipeline rules and extra reviewers change only after you approve a proposal.
 - **Lessons come from trusted text only:** your own messages and pipeline artifacts, never tool output or web pages, so injected instructions cannot persist.
 - **No hook auto-approves anything.** Hooks deny with a reason and the fix, or stay silent.
-- **Local and private.** No telemetry and no network calls from any hook or script, with two opt-ins you control: a first download of an embedding or reranking model you installed support for, and an LLM for richer index context. By default that LLM can only be an Ollama server on your own machine; sending notes to Claude needs `AUTOLEARN_LLM=claude`. The feedback hook stores short, secret-redacted excerpts on your disk only.
+- **Local and private.** No telemetry and no network calls from any hook or script, with two opt-ins you control: a first download of an embedding or reranking model you installed support for, and an LLM for richer index context. By default that LLM can only be an Ollama server on your own machine; sending notes to Claude needs `RESEARCH_LAB_LLM=claude`. The feedback hook stores short, secret-redacted excerpts on your disk only.
 - **No supply-chain surprises.** `/skill-radar` reads and grades third-party skills and MCP servers but never installs them.
 - **Reversible.** The data directory is under git, the installer backs up what it replaces, and the uninstaller moves instead of deleting.
 
@@ -368,8 +368,8 @@ See [SECURITY.md](SECURITY.md) and [docs/hooks.md](docs/hooks.md).
 - **Feedback capture is regex-based.** It recognises common phrasings in 15 languages and misses paraphrases; `/learn` also reads the corrections in the current conversation.
 - **Retrieval is strongest with an embedding model.** Without one (`kb_rag.py setup`) search is lexical plus hashed vectors: paraphrases are often missed and a question in another language than the notes finds nothing (0 of 5 in the benchmark). With one, such a question is still weak (2 of 5 in the top 3), so the output asks Claude to repeat it in the language of the notes. A search with a model takes 1-3 s and about 1 GB of memory on 10,000 chunks.
 - **Questions about the whole base are a sample.** They find well under half of the relevant documents, and the answer says so.
-- **Verified on real models:** `kb_rag.py setup` and `fastembed` with two embedding models and a cross-encoder. Checked only against stand-ins that follow their APIs: `sentence-transformers`, Ollama and `AUTOLEARN_LLM=claude`. Real people's notes have not been measured.
-- **The graph reads stated relations.** Without an LLM, entities and relations come from patterns in English and Russian ([add a language](skills/research/scripts/ragkit/lang.json)), so it follows "X depends on Y", not relations left implied.
+- **Verified on real models:** `kb_rag.py setup` and `fastembed` with two embedding models and a cross-encoder. Checked only against stand-ins that follow their APIs: `sentence-transformers`, Ollama and `RESEARCH_LAB_LLM=claude`. Real people's notes have not been measured.
+- **The graph reads stated relations.** Without an LLM, entities and relations come from patterns in English and Russian ([add a language](skills/knowledge-search/scripts/ragkit/lang.json)), so it follows "X depends on Y", not relations left implied.
 - **Verdicts are heuristics.** `CORRECT` means the question's words stand together in the section, not that the section answers it. Claude still reads what it cites.
 - **`verify` is a lexical check.** It catches wrong numbers and units, unknown ids and names, bad citations and claims the base does not hold. It misses what a sentence only implies and decisions superseded in another note, and it raises false alarms across languages and on paraphrases.
 - **Every indexed folder joins every later search.** `kb_rag.py forget --root DIR` takes one out. Files over 2 MB are skipped.
@@ -378,7 +378,7 @@ See [SECURITY.md](SECURITY.md) and [docs/hooks.md](docs/hooks.md).
 
 ## How it compares
 
-The multi-agent plan -> review pipeline is common ground: superpowers, compound-engineering and ECC all ship one, and they are more mature. autolearn's bet is the loop that grows guards from verified misses: stage-level root cause of escaped bugs, reviewers with diff triggers, and a knowledge base that cannot hold unroutable pages. A dated, side-by-side comparison, including where others are ahead: [docs/comparison.md](docs/comparison.md).
+The multi-agent plan -> review pipeline is common ground: superpowers, compound-engineering and ECC all ship one, and they are more mature. research-lab's bet is the loop that grows guards from verified misses: stage-level root cause of escaped bugs, reviewers with diff triggers, and a knowledge base that cannot hold unroutable pages. A dated, side-by-side comparison, including where others are ahead: [docs/comparison.md](docs/comparison.md).
 
 ## FAQ
 
@@ -394,17 +394,17 @@ No. If a file of yours has the same name, the installer stops before changing an
 
 <details>
 <summary><b>What does the feedback hook store?</b></summary>
-For prompts that match a feedback pattern: time, session id (so /learn can read your surrounding messages), project folder name, the matched kinds, and the first 280 characters with keys, passwords, tokens and URL credentials redacted, in <code>~/.claude/autolearn/inbox/feedback.jsonl</code> (git-ignored, never sent anywhere). Slash commands are skipped. Set <code>AUTOLEARN_CAPTURE=0</code> to turn it off.
+For prompts that match a feedback pattern: time, session id (so /learn can read your surrounding messages), project folder name, the matched kinds, and the first 280 characters with keys, passwords, tokens and URL credentials redacted, in <code>~/.claude/research-lab/inbox/feedback.jsonl</code> (git-ignored, never sent anywhere). Slash commands are skipped. Set <code>RESEARCH_LAB_CAPTURE=0</code> to turn it off.
 </details>
 
 <details>
 <summary><b>Which languages does feedback capture understand?</b></summary>
-English, Chinese, Spanish, Portuguese, Russian, Japanese, German, French, Korean, Italian, Turkish, Polish, Ukrainian, Dutch and Vietnamese. The patterns live in <code>~/.claude/autolearn/feedback-patterns.json</code> (seeded from <a href="templates/feedback-patterns.json">templates/feedback-patterns.json</a>); edit it, or set <code>"enabled": ["de", "fr"]</code> to use only some languages. Every language ships with examples that the tests check.
+English, Chinese, Spanish, Portuguese, Russian, Japanese, German, French, Korean, Italian, Turkish, Polish, Ukrainian, Dutch and Vietnamese. The patterns live in <code>~/.claude/research-lab/feedback-patterns.json</code> (seeded from <a href="templates/feedback-patterns.json">templates/feedback-patterns.json</a>); edit it, or set <code>"enabled": ["de", "fr"]</code> to use only some languages. Every language ships with examples that the tests check.
 </details>
 
 <details>
 <summary><b>Where do my team's checklists go?</b></summary>
-<code>~/.claude/autolearn/knowledge/required-docs.md</code>. The docs scout reads it on every task, the critic blocks on unclosed items, and the merge gate checks the result against it.
+<code>~/.claude/research-lab/knowledge/required-docs.md</code>. The docs scout reads it on every task, the critic blocks on unclosed items, and the merge gate checks the result against it.
 </details>
 
 <details>
@@ -414,7 +414,7 @@ No. Deep mode asks for it and falls back to Opus automatically on a usage limit,
 
 <details>
 <summary><b>Can I keep the data somewhere else?</b></summary>
-Hooks and scripts honour <code>AUTOLEARN_HOME</code>, but the skills' instructions assume the default <code>~/.claude/autolearn</code>; treat the variable as a testing aid.
+Hooks and scripts honour <code>RESEARCH_LAB_HOME</code>, but the skills' instructions assume the default <code>~/.claude/research-lab</code>; treat the variable as a testing aid.
 </details>
 
 ## Contributing

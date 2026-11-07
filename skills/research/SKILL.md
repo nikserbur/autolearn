@@ -24,7 +24,7 @@ KB/PROGRAM.md        goal, the user's hard rules, rejected directions, metrics, 
                      project review checklist, round tables (H<round>.<n>)
 KB/KNOWLEDGE.md      conclusions with numbers and sources, newest section on top
 KB/EXPERIMENTS.tsv   one row per experiment, written BEFORE the run, completed after it
-KB/reviews/          R<NN>_<subject>.md from al-hypothesis-reviewer
+KB/reviews/          R<NN>_<subject>.md from rl-hypothesis-reviewer
 KB/BRIEF_<date>.md   plain-language summary for the user, when asked or every few rounds
 scripts/ results/    numbered scripts (NN_name) and their outputs
 ```
@@ -35,16 +35,16 @@ and [EXPERIMENTS-TEMPLATE.tsv](EXPERIMENTS-TEMPLATE.tsv). Resuming an existing f
 
 **Knowledge store (RAG), built into the run.**
 - Storing is automatic: the `kb_autoindex` hook embeds every file written under a `KB/` folder
-  or the global KB into the vector store `~/.claude/autolearn/knowledge/.rag/` in the
+  or the global KB into the vector store `~/.claude/research-lab/knowledge/.rag/` in the
   background. Just write `KNOWLEDGE.md`, the journal and the reviews; nothing else to call.
-  Without hooks (or to force it): `python3 "${CLAUDE_SKILL_DIR}/scripts/kb_rag.py" index --root <folder>/KB`.
-- Retrieval: `python3 "${CLAUDE_SKILL_DIR}/scripts/kb_rag.py" search --root <folder>/KB "<query>"`
+  Without hooks (or to force it): `python3 "${CLAUDE_SKILL_DIR}/../knowledge-search/scripts/kb_rag.py" index --root <folder>/KB`.
+- Retrieval: `python3 "${CLAUDE_SKILL_DIR}/../knowledge-search/scripts/kb_rag.py" search --root <folder>/KB "<query>"`
   routes each query by itself and returns the best sections with `path:line` within 8 KB, with a
   verdict: `CORRECT`, `AMBIGUOUS` (it names what is missing) or `INCORRECT` (read the closest sections it
   shows; if none answers, go to the code, papers and the web, then record the finding). "What depends on X" walks the
   entity graph; "what did all rounds show" draws on every document and names what recurs. The store
   holds every research KB ever indexed, so past projects answer too.
-- Embeddings: a multilingual model once `python3 "${CLAUDE_SKILL_DIR}/scripts/kb_rag.py" setup` has run (a private
+- Embeddings: a multilingual model once `python3 "${CLAUDE_SKILL_DIR}/../knowledge-search/scripts/kb_rag.py" setup` has run (a private
   virtualenv, about 370 MB of downloads, so ask first; every later run moves into it by itself), otherwise the stdlib
   hashing fallback. `kb_rag.py status` shows what is in use; mention it once in the first check-in.
 - A research KB joins every later search. `kb_rag.py forget --root <folder>/KB` takes it out when it is confidential or
@@ -74,7 +74,7 @@ Add `## Round <n>` to `PROGRAM.md` with a table, one row per hypothesis:
 - Rank by expected value per hour. Fix the pass criterion now; it never moves after the run.
 
 ## 3. Critique before compute
-Agent -> `al-hypothesis-reviewer`, mode `critique`, round `R<NN>`: the round table, the RAG
+Agent -> `rl-hypothesis-reviewer`, mode `critique`, round `R<NN>`: the round table, the RAG
 command, limits. Apply KEEP / CUT / CHANGE; add the missing hypotheses it found. Skip only for a
 single cheap hypothesis.
 
@@ -94,7 +94,7 @@ means for the next round. Negative results are knowledge too.
 
 ## 6. Independent review
 After every finished experiment batch and always before a new round:
-Agent -> `al-hypothesis-reviewer`, mode `review`, round `R<NN>`: experiment ids and artifacts,
+Agent -> `rl-hypothesis-reviewer`, mode `review`, round `R<NN>`: experiment ids and artifacts,
 running processes it must not touch, limits, the RAG command, and the specific questions you
 most need answered. It recomputes numbers, decomposes causes, searches papers, books, forums,
 local code and the KB, and writes `KB/reviews/R<NN>_*.md`.
@@ -124,12 +124,12 @@ the program allows.
 Stop when the round count is reached, the deliverable passes its criterion on the honest
 windows with the reviewer's PASS, or two rounds in a row bring nothing (say so and propose a
 change of direction). Then write `BRIEF_<date>.md` (results, the best variant, what is proven
-and what is not, next steps), check the store is current (`kb_rag.py status`), run `python3 "${CLAUDE_SKILL_DIR}/scripts/kb_rag.py" verify --root <folder>/KB --file <brief>` so that
+and what is not, next steps), check the store is current (`kb_rag.py status`), run `python3 "${CLAUDE_SKILL_DIR}/../knowledge-search/scripts/kb_rag.py" verify --root <folder>/KB --file <brief>` so that
 no number in it drifted from the journal (exit 1 lists what did), and promote
 the facts that matter beyond this project yourself: append them to
-`~/.claude/autolearn/knowledge/topics/research-<slug>.md` (one `##` section per fact group,
+`~/.claude/research-lab/knowledge/topics/research-<slug>.md` (one `##` section per fact group,
 every fact with its source in the research folder) and add or extend its block in
-`~/.claude/autolearn/knowledge/topic-map.md` (keywords, `read first`, `updated`). The hook
+`~/.claude/research-lab/knowledge/topic-map.md` (keywords, `read first`, `updated`). The hook
 embeds them; future runs in any project retrieve them.
 
 ## Rules

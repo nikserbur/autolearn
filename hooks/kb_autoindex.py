@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """PostToolUse hook (Write|Edit|MultiEdit): keeps the RAG vector store current without anyone
-calling a skill. A write into the knowledge base (`$AUTOLEARN_HOME/knowledge`) or into any
+calling a skill. A write into the knowledge base (`$RESEARCH_LAB_HOME/knowledge`) or into any
 folder named `KB` (a research knowledge base) starts an incremental `kb_rag.py index` in the
 background, so the next search already sees the new chunks. Never blocks, prints nothing.
 
-AUTOLEARN_PYTHON names the interpreter that has the embedding model (default: this one).
-AUTOLEARN_AUTOINDEX=0 disables it; AUTOLEARN_AUTOINDEX=sync waits for the indexer (tests).
+RESEARCH_LAB_PYTHON names the interpreter that has the embedding model (default: this one).
+RESEARCH_LAB_AUTOINDEX=0 disables it; RESEARCH_LAB_AUTOINDEX=sync waits for the indexer (tests).
 """
 from __future__ import annotations
 
@@ -19,8 +19,8 @@ from _common import home, read_payload  # noqa: E402
 
 HERE = pathlib.Path(__file__).resolve().parent
 ENGINE_CANDIDATES = [
-    HERE.parent / "skills" / "research" / "scripts" / "kb_rag.py",           # plugin / repo layout
-    HERE.parent.parent / "skills" / "research" / "scripts" / "kb_rag.py",    # install.sh layout
+    HERE.parent / "skills" / "knowledge-search" / "scripts" / "kb_rag.py",           # plugin / repo layout
+    HERE.parent.parent / "skills" / "knowledge-search" / "scripts" / "kb_rag.py",    # install.sh layout
 ]
 
 
@@ -36,7 +36,7 @@ def kb_root(path: pathlib.Path):
 
 
 def main() -> int:
-    mode = os.environ.get("AUTOLEARN_AUTOINDEX", "1")
+    mode = os.environ.get("RESEARCH_LAB_AUTOINDEX", "1")
     if mode == "0":
         return 0
     payload = read_payload()
@@ -49,7 +49,7 @@ def main() -> int:
     engine = next((p for p in ENGINE_CANDIDATES if p.exists()), None)
     if engine is None:
         return 0
-    cmd = [os.environ.get("AUTOLEARN_PYTHON") or sys.executable, str(engine), "index"] + (["--root", str(research)] if research else [])
+    cmd = [os.environ.get("RESEARCH_LAB_PYTHON") or sys.executable, str(engine), "index"] + (["--root", str(research)] if research else [])
     try:
         if mode == "sync":
             subprocess.run(cmd, capture_output=True, timeout=600)

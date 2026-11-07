@@ -67,7 +67,7 @@ class NoiseFloor(RagCase):
         self.run_engine("index")
         self.assertEqual(self.meta()["noise"], 0.0)
         self.fake_models()
-        self.run_engine("index", AUTOLEARN_EMBED="fastembed", AUTOLEARN_RERANK="off")
+        self.run_engine("index", RESEARCH_LAB_EMBED="fastembed", RESEARCH_LAB_RERANK="off")
         self.assertGreater(self.meta()["noise"], 0.0)
 
 
@@ -200,7 +200,7 @@ class Reranking(RagCase):
 
     def test_multilingual_model_is_trusted_with_russian(self):
         self.fake_models()
-        self.env_extra["AUTOLEARN_RERANK_MODEL"] = "jinaai/jina-reranker-v2-base-multilingual"
+        self.env_extra["RESEARCH_LAB_RERANK_MODEL"] = "jinaai/jina-reranker-v2-base-multilingual"
         self.run_engine("index")
         self.assertIn("multilingual", self.search("сколько живёт сессия ttl")["reranker"])
 
@@ -222,7 +222,7 @@ class Reranking(RagCase):
 
     def test_turned_off_means_off(self):
         self.ce_ready()
-        self.assertEqual(self.search("webhook retry timeout", AUTOLEARN_RERANK="off")["reranker"], "built-in")
+        self.assertEqual(self.search("webhook retry timeout", RESEARCH_LAB_RERANK="off")["reranker"], "built-in")
 
 
 class GraphExtraction(unittest.TestCase):

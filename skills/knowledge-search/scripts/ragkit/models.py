@@ -2,9 +2,9 @@
 embeddings fall back to stdlib hashing, the cross-encoder to the built-in reranker, late chunking to
 plain contextual embeddings.
 
-$AUTOLEARN_EMBED = auto | fastembed | sentence-transformers | hash, model in $AUTOLEARN_EMBED_MODEL.
-$AUTOLEARN_RERANK = auto | fastembed | sentence-transformers | off, model in $AUTOLEARN_RERANK_MODEL.
-$AUTOLEARN_LATE = auto | off: late chunking, used when a model exposes token vectors and sees at
+$RESEARCH_LAB_EMBED = auto | fastembed | sentence-transformers | hash, model in $RESEARCH_LAB_EMBED_MODEL.
+$RESEARCH_LAB_RERANK = auto | fastembed | sentence-transformers | off, model in $RESEARCH_LAB_RERANK_MODEL.
+$RESEARCH_LAB_LATE = auto | off: late chunking, used when a model exposes token vectors and sees at
 least LATE_MIN_WINDOW tokens at once (a smaller window has no document context left to give).
 """
 from __future__ import annotations
@@ -17,7 +17,7 @@ import re
 import sys
 import zlib
 
-from .core import HASH_DIM, STEM, al_home, words
+from .core import HASH_DIM, STEM, lab_home, words
 
 DEFAULT_MODEL = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
 FAST_RERANK = "Xenova/ms-marco-MiniLM-L-6-v2"
@@ -58,7 +58,7 @@ class HashEmbedder:
 class FastEmbedder:
     def __init__(self, model: str, download: bool = True):
         from fastembed import TextEmbedding  # optional dependency
-        cache = al_home() / "models"  # the default temp cache can be wiped and re-downloaded
+        cache = lab_home() / "models"  # the default temp cache can be wiped and re-downloaded
         kwargs = {} if download else {"local_files_only": True}
         self.m, self.id = TextEmbedding(model_name=model, cache_dir=str(cache), **kwargs), f"fastembed:{model}"
         self.dim = len(self.embed(["probe"])[0])
@@ -94,8 +94,8 @@ class STEmbedder:
 
 def embedder(download: bool = True):
     """The best backend available. Only commands that build the index may download: a search must not hang on one."""
-    want = os.environ.get("AUTOLEARN_EMBED", "auto").lower()
-    model = os.environ.get("AUTOLEARN_EMBED_MODEL", DEFAULT_MODEL)
+    want = os.environ.get("RESEARCH_LAB_EMBED", "auto").lower()
+    model = os.environ.get("RESEARCH_LAB_EMBED_MODEL", DEFAULT_MODEL)
     for name, cls in (("fastembed", FastEmbedder), ("sentence-transformers", STEmbedder)):
         if want in ("auto", name):
             try:
@@ -107,7 +107,7 @@ def embedder(download: bool = True):
 
 
 def late_enabled(emb) -> bool:
-    return os.environ.get("AUTOLEARN_LATE", "auto").lower() != "off" and emb.late_window >= LATE_MIN_WINDOW
+    return os.environ.get("RESEARCH_LAB_LATE", "auto").lower() != "off" and emb.late_window >= LATE_MIN_WINDOW
 
 
 def late_pool(emb, text: str, spans: list) -> list:
@@ -143,7 +143,7 @@ class FastCrossEncoder:
     def __init__(self, model: str, download: bool):
         from fastembed.rerank.cross_encoder import TextCrossEncoder  # optional dependency
         kwargs = {} if download else {"local_files_only": True}  # a search never waits for a download
-        self.m = TextCrossEncoder(model_name=model, cache_dir=str(al_home() / "models"), **kwargs)
+        self.m = TextCrossEncoder(model_name=model, cache_dir=str(lab_home() / "models"), **kwargs)
         self.id, self.english_only = f"fastembed:{model}", is_english_only(model)
 
     def score(self, query: str, docs: list) -> list:
@@ -164,8 +164,8 @@ class STCrossEncoder:
 def cross_encoder(download: bool = False):
     """The neural reranker if one can load, else None and the built-in reranker does the work.
     Only `index` passes download=True, in the background, so that the next search finds it cached."""
-    want = os.environ.get("AUTOLEARN_RERANK", "auto").lower()
-    model = os.environ.get("AUTOLEARN_RERANK_MODEL")
+    want = os.environ.get("RESEARCH_LAB_RERANK", "auto").lower()
+    model = os.environ.get("RESEARCH_LAB_RERANK_MODEL")
     for name, cls, default in (("fastembed", FastCrossEncoder, FAST_RERANK),
                                ("sentence-transformers", STCrossEncoder, ST_RERANK)):
         if want in ("auto", name):

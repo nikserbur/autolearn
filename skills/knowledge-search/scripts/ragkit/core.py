@@ -32,13 +32,13 @@ PERIOD_RE = re.compile("|".join([
 SENTENCE_END = re.compile(rf"(?<=[.!?\u2026])\s+(?=[\"'\u00ab(\[`]?[{UPPER}0-9])")
 
 
-def al_home() -> pathlib.Path:
-    env = os.environ.get("AUTOLEARN_HOME")
-    return pathlib.Path(env).expanduser() if env else pathlib.Path.home() / ".claude" / "autolearn"
+def lab_home() -> pathlib.Path:
+    env = os.environ.get("RESEARCH_LAB_HOME")
+    return pathlib.Path(env).expanduser() if env else pathlib.Path.home() / ".claude" / "research-lab"
 
 
 def kb_dir() -> pathlib.Path:
-    return al_home() / "knowledge"
+    return lab_home() / "knowledge"
 
 
 def normalize(text: str) -> str:
@@ -63,7 +63,7 @@ def compound_ids(text: str) -> list:
 
 
 def stem(word: str) -> str:
-    """Cut to STEM characters: a crude stemmer for any language. Identifiers stay whole (E99, AUTOLEARN_HOME)."""
+    """Cut to STEM characters: a crude stemmer for any language. Identifiers stay whole (E99, RESEARCH_LAB_HOME)."""
     return word if is_identifier(word) else word[:STEM]
 
 

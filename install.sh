@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# autolearn installer: copies agents, skills and hooks into ~/.claude, seeds the data directory
-# ~/.claude/autolearn (never overwritten), and registers three global hooks in settings.json.
+# research-lab installer: copies agents, skills and hooks into ~/.claude, seeds the data directory
+# ~/.claude/research-lab (never overwritten), and registers three global hooks in settings.json.
 #
 #   ./install.sh                   install or upgrade; stops before changing anything if one of
-#                                  your own files has the same name as an autolearn file
+#                                  your own files has the same name as a research-lab file
 #   ./install.sh --dry-run         show what would happen
 #   ./install.sh --force           replace such files too; your originals are backed up and put
 #                                  back by ./uninstall.sh
@@ -30,17 +30,23 @@ done
 
 command -v python3 >/dev/null || { echo "python3 is required (hooks and scripts use the standard library only)" >&2; exit 1; }
 
-AL="$CLAUDE_DIR/autolearn"
-HOOKS_DST="$CLAUDE_DIR/hooks/autolearn"
+AL="$CLAUDE_DIR/research-lab"
+HOOKS_DST="$CLAUDE_DIR/hooks/research-lab"
 STAMP="$(date +%Y%m%d-%H%M%S)"
-BACKUP="$CLAUDE_DIR/backups/autolearn-$STAMP"
+BACKUP="$CLAUDE_DIR/backups/research-lab-$STAMP"
 MANIFEST="$AL/.install-manifest"
+OLD_AL="$CLAUDE_DIR/autolearn"              # the project's name before 0.4.0
+OLD_MANIFEST="$OLD_AL/.install-manifest"
 NEW_ENTRIES=""
 
 say() { printf '%s\n' "$*"; }
 do_() { if [ "$DRY" = 1 ]; then say "  [dry-run] $*"; else "$@"; fi; }
 record() { NEW_ENTRIES="${NEW_ENTRIES}$1"$'\n'; }
-ours() { [ -e "$MANIFEST" ] && grep -qxF "file	$1" "$MANIFEST"; }  # installed by a previous run?
+ours() {  # installed by a previous run, under this name or the old one?
+  local m
+  for m in "$MANIFEST" "$OLD_MANIFEST"; do [ -e "$m" ] && grep -qxF "file	$1" "$m" && return 0; done
+  return 1
+}
 
 backup() {  # copy the real content (symlinks dereferenced) into the backup dir; echo its path
   local path="$1" rel="${1#"$CLAUDE_DIR"/}"
@@ -62,13 +68,13 @@ for t in "${targets[@]}"; do
   fi
 done
 if [ ${#conflicts[@]} -gt 0 ] && [ "$FORCE" = 0 ]; then
-  say "Stopped before changing anything: these already exist in $CLAUDE_DIR and are not from autolearn:"
+  say "Stopped before changing anything: these already exist in $CLAUDE_DIR and are not from research-lab:"
   printf '  %s\n' "${conflicts[@]}"
   say "Rename yours, or rerun with --force (your originals are backed up and ./uninstall.sh restores them)."
   exit 1
 fi
 
-say "autolearn -> $CLAUDE_DIR"
+say "research-lab -> $CLAUDE_DIR"
 
 # 2. agents and skills: back up everything that will be replaced first, then copy.
 #    If any backup fails, nothing has been copied or removed yet.
@@ -97,11 +103,33 @@ for f in "$SRC"/hooks/*.py; do cmp -s "$f" "$HOOKS_DST/$(basename "$f")" || chan
 if [ -d "$HOOKS_DST" ] && [ "$changed" = 1 ]; then backup "$HOOKS_DST" >/dev/null || exit 1; fi
 do_ mkdir -p "$HOOKS_DST"
 do_ cp "$SRC"/hooks/*.py "$HOOKS_DST/"
-record "file	hooks/autolearn"
+record "file	hooks/research-lab"
 
-# 4. data directory: seeded once from skeleton templates, never overwritten, under git
-if [ "$DRY" = 1 ]; then say "  [dry-run] seed $AL from templates (existing files are kept)"
-else python3 "$SRC/hooks/_seed.py" "$AL" "$SRC/templates"; fi
+# 3b. an install from before the rename (autolearn): its other files go to the backup, your
+#     originals it replaced come back (or stay owed by ./uninstall.sh when we now use the name)
+if [ -e "$OLD_MANIFEST" ]; then
+  say "removing the earlier autolearn install (kept in $BACKUP)"
+  while IFS=$'\t' read -r kind rel _; do
+    if [ "$kind" = "file" ] && [ ! -e "$SRC/$rel" ] && exists "$CLAUDE_DIR/$rel"; then
+      backup "$CLAUDE_DIR/$rel" >/dev/null || exit 1
+      do_ rm -rf "$CLAUDE_DIR/$rel"
+    fi
+  done < <(grep -v '^#' "$OLD_MANIFEST")
+  while IFS=$'\t' read -r kind rel saved; do  # after the removals: an original may sit where one was
+    [ "$kind" = "restore" ] && [ -e "$saved" ] || continue
+    if [ -e "$SRC/$rel" ]; then record "restore	$rel	$saved"
+    elif [ "$DRY" = 0 ] && ! exists "$CLAUDE_DIR/$rel"; then
+      mkdir -p "$(dirname "$CLAUDE_DIR/$rel")" && cp -R "$saved" "$CLAUDE_DIR/$rel" && say "  restored your $rel"
+    fi
+  done < <(grep -v '^#' "$OLD_MANIFEST")
+  [ "$SETTINGS" = 0 ] && say "  --no-settings: remove the hooks/autolearn/ entries from settings.json yourself"
+  do_ rm -f "$OLD_MANIFEST"
+fi
+
+# 4. data directory: seeded once from skeleton templates, never overwritten, under git;
+#    the old autolearn data directory moves here first
+if [ "$DRY" = 1 ]; then say "  [dry-run] seed $AL from templates (existing files are kept; $OLD_AL moves there if present)"
+else python3 "$SRC/hooks/_seed.py" "$AL" "$SRC/templates" "$OLD_AL"; fi
 
 # 5. settings.json: three global hooks, idempotent, with a backup
 if [ "$SETTINGS" = 1 ]; then
@@ -120,7 +148,7 @@ try:
 except ValueError:
     sys.exit("  settings.json is not valid JSON; fix it or rerun with --no-settings")
 def cmd(name):  # a non-default --claude-dir also needs its data dir passed to the hook
-    prefix = f"AUTOLEARN_HOME={shlex.quote(custom)} " if custom else ""
+    prefix = f"RESEARCH_LAB_HOME={shlex.quote(custom)} " if custom else ""
     return f'{prefix}python3 "{hooks}/{name}"'
 wanted = [
     ("SessionStart", "startup|resume|clear|compact", cmd("session_brief.py"), 10),
@@ -128,6 +156,13 @@ wanted = [
     ("PostToolUse", "Write|Edit|MultiEdit", cmd("kb_autoindex.py"), 10),
 ]
 h = cfg.setdefault("hooks", {})
+for event in list(h):  # hooks of an install from before the rename (autolearn) go
+    for g in h[event]:
+        g["hooks"] = [x for x in g.get("hooks", []) if "hooks/autolearn/" not in x.get("command", "")]
+    h[event] = [g for g in h[event] if g.get("hooks")]
+perms = cfg.get("permissions", {})
+if "allow" in perms:
+    perms["allow"] = [r for r in perms["allow"] if "hooks/autolearn/" not in r]
 for event, matcher, command, timeout in wanted:
     groups = h.setdefault(event, [])
     if any(command == x.get("command") for g in groups for x in g.get("hooks", [])):
@@ -143,10 +178,21 @@ PY
   record "settings"
 fi
 
-# 6. CLAUDE.md routing-table block (opt-in; only the table, no personal workflow rules)
-if [ "$WITH_MD" = 1 ]; then
-  MD="$CLAUDE_DIR/CLAUDE.md"
-  if [ -e "$MD" ] && grep -q 'autolearn:start' "$MD"; then :
+# 6. CLAUDE.md routing-table block (opt-in; only the table, no personal workflow rules).
+#    A block from before the rename (autolearn) is swapped for the new one.
+MD="$CLAUDE_DIR/CLAUDE.md"
+if [ -e "$MD" ] && grep -q 'autolearn:start' "$MD"; then
+  backup "$MD" >/dev/null || exit 1
+  if [ "$DRY" = 1 ]; then say "  [dry-run] replace the autolearn routing block in $MD"
+  else python3 - "$MD" "$SRC/templates/CLAUDE.md" <<'PY'
+import pathlib, re, sys
+p, new = pathlib.Path(sys.argv[1]), pathlib.Path(sys.argv[2]).read_text()
+p.write_text(re.sub(r"<!-- autolearn:start.*?<!-- autolearn:end -->\n?", lambda m: new, p.read_text(), flags=re.S))
+PY
+  fi
+  record "claude-md"
+elif [ "$WITH_MD" = 1 ]; then
+  if [ -e "$MD" ] && grep -q 'research-lab:start' "$MD"; then :
   elif [ -e "$MD" ]; then
     backup "$MD" >/dev/null || exit 1
     if [ "$DRY" = 1 ]; then say "  [dry-run] append the routing block to $MD"
@@ -161,7 +207,7 @@ fi
 if [ "$DRY" = 0 ]; then
   { if [ -e "$MANIFEST" ]; then grep -v '^#' "$MANIFEST" || true; fi; printf '%s' "$NEW_ENTRIES"; } \
     | awk 'NF && !seen[$0]++' > "$MANIFEST.tmp"
-  { printf '# autolearn install manifest (last run %s from %s)\n' "$STAMP" "$SRC"; cat "$MANIFEST.tmp"; } > "$MANIFEST"
+  { printf '# research-lab install manifest (last run %s from %s)\n' "$STAMP" "$SRC"; cat "$MANIFEST.tmp"; } > "$MANIFEST"
   rm -f "$MANIFEST.tmp"
 fi
 
@@ -170,4 +216,4 @@ say "done. backups (if anything was replaced): $BACKUP"
 say "next:"
 say "  - restart Claude Code (hooks load at session start)"
 [ "$WITH_MD" = 0 ] && say "  - optional: ./install.sh --with-claude-md adds the routing table to ~/.claude/CLAUDE.md"
-say "  - try:  /kb-ingest repo   /research \"your question\""
+say "  - try:  /knowledge-ingest repo   /research \"your question\""

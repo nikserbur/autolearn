@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# autolearn uninstaller. Nothing is deleted: what is removed is moved to
-# ~/.claude/backups/autolearn-uninstall-<timestamp>/, and your own files that an install with
+# research-lab uninstaller. Nothing is deleted: what is removed is moved to
+# ~/.claude/backups/research-lab-uninstall-<timestamp>/, and your own files that an install with
 # --force replaced are put back.
 #
 #   ./uninstall.sh               remove agents, skills, hooks, settings entries, CLAUDE.md block
-#   ./uninstall.sh --purge-data  also move the data directory (~/.claude/autolearn) to the backup
+#   ./uninstall.sh --purge-data  also move the data directory (~/.claude/research-lab) to the backup
 #   ./uninstall.sh --claude-dir D
 set -euo pipefail
 
@@ -20,9 +20,9 @@ while [ $# -gt 0 ]; do
   shift
 done
 
-AL="$CLAUDE_DIR/autolearn"
+AL="$CLAUDE_DIR/research-lab"
 MANIFEST="$AL/.install-manifest"
-BACKUP="$CLAUDE_DIR/backups/autolearn-uninstall-$(date +%Y%m%d-%H%M%S)"
+BACKUP="$CLAUDE_DIR/backups/research-lab-uninstall-$(date +%Y%m%d-%H%M%S)"
 [ -e "$MANIFEST" ] || { echo "no install manifest at $MANIFEST - nothing to do" >&2; exit 1; }
 mkdir -p "$BACKUP"
 
@@ -57,26 +57,26 @@ import json, pathlib, sys
 p = pathlib.Path(sys.argv[1]); cfg = json.loads(p.read_text())
 for event, groups in list(cfg.get("hooks", {}).items()):
     for g in groups:
-        g["hooks"] = [h for h in g.get("hooks", []) if "hooks/autolearn/" not in h.get("command", "")]
+        g["hooks"] = [h for h in g.get("hooks", []) if "hooks/research-lab/" not in h.get("command", "")]
     cfg["hooks"][event] = [g for g in groups if g.get("hooks")]
     if not cfg["hooks"][event]:
         del cfg["hooks"][event]
 perms = cfg.get("permissions", {})
 if "allow" in perms:
-    perms["allow"] = [r for r in perms["allow"] if "hooks/autolearn/" not in r]
+    perms["allow"] = [r for r in perms["allow"] if "hooks/research-lab/" not in r]
 p.write_text(json.dumps(cfg, indent=2, ensure_ascii=False) + "\n")
 PY
-  echo "  removed autolearn hooks from settings.json"
+  echo "  removed research-lab hooks from settings.json"
 fi
 if grep -qx 'claude-md' "$MANIFEST" && [ -e "$CLAUDE_DIR/CLAUDE.md" ]; then
   cp -L "$CLAUDE_DIR/CLAUDE.md" "$BACKUP/CLAUDE.md"
   python3 - "$CLAUDE_DIR/CLAUDE.md" <<'PY'
 import pathlib, re, sys
 p = pathlib.Path(sys.argv[1])
-p.write_text(re.sub(r"\n?<!-- autolearn:start.*?<!-- autolearn:end -->\n?", "\n", p.read_text(), flags=re.S))
+p.write_text(re.sub(r"\n?<!-- research-lab:start.*?<!-- research-lab:end -->\n?", "\n", p.read_text(), flags=re.S))
 PY
   echo "  removed the routing block from CLAUDE.md"
 fi
 
-if [ "$PURGE" = 1 ]; then stash "autolearn"; else rm -f "$MANIFEST"; echo "  data directory kept: $AL"; fi
+if [ "$PURGE" = 1 ]; then stash "research-lab"; else rm -f "$MANIFEST"; echo "  data directory kept: $AL"; fi
 echo "backup: $BACKUP"

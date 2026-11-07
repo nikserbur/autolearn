@@ -1,13 +1,13 @@
 {
-  "name": "autolearn",
+  "name": "research-lab",
   "owner": {
     "name": "Nikita Burakov",
     "url": "https://github.com/nikserbur"
   },
-  "description": "autolearn: a Claude Code harness that learns from your feedback, reviews and escaped bugs.",
+  "description": "research-lab: a Claude Code harness that learns from your feedback, reviews and escaped bugs.",
   "plugins": [
     {
-      "name": "autolearn",
+      "name": "research-lab",
       "source": "./",
       "description": "Self-learning harness for Claude Code: multi-agent delivery pipeline with a fresh-context merge gate, evidence-backed lessons, auto-grown reviewers, a hypothesis-driven research loop with an independent reviewer, a self-routing local knowledge base (hybrid search, GraphRAG, corrective RAG, contextual retrieval, reranking, incremental updates) and a skill/MCP gap radar.",
       "category": "development",

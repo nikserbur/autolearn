@@ -11,7 +11,7 @@ import shutil
 import subprocess
 import sys
 
-from .core import al_home
+from .core import lab_home
 
 PREFERRED = ("python3.13", "python3.12", "python3.11", "python3.10")  # those with onnxruntime wheels; newest first
 LAST_RESORT = ("python3.14", "python3")
@@ -19,7 +19,7 @@ DOWNLOAD_TIMEOUT = 1800
 
 
 def _pointer() -> pathlib.Path:
-    return al_home() / "model-python"
+    return lab_home() / "model-python"
 
 
 def remembered_python() -> str:
@@ -31,17 +31,17 @@ def remembered_python() -> str:
 
 def continue_in_model_python() -> None:
     """Re-run this command in the python that has the model. Called first thing; never returns if it switches."""
-    if os.environ.get("AUTOLEARN_REEXEC"):
+    if os.environ.get("RESEARCH_LAB_REEXEC"):
         return
-    explicit = os.environ.get("AUTOLEARN_PYTHON")
+    explicit = os.environ.get("RESEARCH_LAB_PYTHON")
     target = explicit or remembered_python()
     if not target or os.path.abspath(target) == os.path.abspath(sys.executable):
         return
     if not os.path.exists(target):
-        source = "AUTOLEARN_PYTHON" if explicit else "the python from `kb_rag.py setup`"
+        source = "RESEARCH_LAB_PYTHON" if explicit else "the python from `kb_rag.py setup`"
         print(f"! {source} is {target}, which does not exist; continuing with {sys.executable}", file=sys.stderr)
         return
-    os.environ["AUTOLEARN_REEXEC"] = "1"
+    os.environ["RESEARCH_LAB_REEXEC"] = "1"
     sys.stdout.flush()
     os.execv(target, [target, *sys.argv])
 
@@ -64,7 +64,7 @@ def setup(engine: str, wanted: str = "") -> int:
     if not python:
         print(f"! no python found at {wanted}", file=sys.stderr)
         return 1
-    venv = al_home() / "venv"
+    venv = lab_home() / "venv"
     venv_python = venv / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
     print(f"Installing fastembed into {venv} with {python}: about 150 MB of packages, then a 220 MB model.", flush=True)
     steps = [[python, "-m", "venv", str(venv)],
@@ -77,8 +77,8 @@ def setup(engine: str, wanted: str = "") -> int:
             return 1
     _pointer().parent.mkdir(parents=True, exist_ok=True)
     _pointer().write_text(str(venv_python), encoding="utf-8")
-    env = dict(os.environ, AUTOLEARN_REEXEC="1")
-    env.pop("AUTOLEARN_EMBED", None)
+    env = dict(os.environ, RESEARCH_LAB_REEXEC="1")
+    env.pop("RESEARCH_LAB_EMBED", None)
     print("Packages are in. Downloading the model and building the index with it...", flush=True)
     try:
         return subprocess.run([str(venv_python), engine, "index"], env=env, timeout=DOWNLOAD_TIMEOUT).returncode

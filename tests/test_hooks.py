@@ -3,7 +3,7 @@
     python3 -m unittest discover -s tests -v
 
 Every hook runs as a subprocess with a JSON payload on stdin, exactly as Claude Code calls it,
-against a throwaway $AUTOLEARN_HOME. Secret-looking strings are assembled at runtime so this
+against a throwaway $RESEARCH_LAB_HOME. Secret-looking strings are assembled at runtime so this
 file never trips a secret scanner itself.
 """
 import json
@@ -21,7 +21,7 @@ HOOKS = pathlib.Path(__file__).resolve().parent.parent / "hooks"
 class HookCase(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
-        self.home = pathlib.Path(self.tmp.name) / "autolearn"
+        self.home = pathlib.Path(self.tmp.name) / "research-lab"
         self.home.mkdir()
         self.repo = pathlib.Path(self.tmp.name) / "demo-repo"
         self.repo.mkdir()
@@ -30,7 +30,7 @@ class HookCase(unittest.TestCase):
         self.tmp.cleanup()
 
     def run_hook(self, name, payload, *args, stdin=None, expect=0):
-        env = dict(os.environ, AUTOLEARN_HOME=str(self.home), CLAUDE_PROJECT_DIR=str(self.repo))
+        env = dict(os.environ, RESEARCH_LAB_HOME=str(self.home), CLAUDE_PROJECT_DIR=str(self.repo))
         proc = subprocess.run(
             [sys.executable, str(HOOKS / name), *args],
             input=stdin if stdin is not None else json.dumps(payload),
@@ -161,12 +161,12 @@ class KbAutoindex(HookCase):
         return {"tool_name": "Write", "tool_input": {"file_path": str(path)}}
 
     def run_sync(self, path):
-        os.environ["AUTOLEARN_AUTOINDEX"] = "sync"
-        os.environ["AUTOLEARN_EMBED"] = "hash"
+        os.environ["RESEARCH_LAB_AUTOINDEX"] = "sync"
+        os.environ["RESEARCH_LAB_EMBED"] = "hash"
         try:
             return self.run_hook("kb_autoindex.py", self.write_payload(path))
         finally:
-            del os.environ["AUTOLEARN_AUTOINDEX"], os.environ["AUTOLEARN_EMBED"]
+            del os.environ["RESEARCH_LAB_AUTOINDEX"], os.environ["RESEARCH_LAB_EMBED"]
 
     def test_write_into_research_kb_is_embedded(self):
         kb = self.repo / "research" / "demo" / "KB"

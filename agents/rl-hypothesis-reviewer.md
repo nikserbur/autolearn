@@ -1,5 +1,5 @@
 ---
-name: al-hypothesis-reviewer
+name: rl-hypothesis-reviewer
 description: >
   Independent fresh-context reviewer of a research loop, called by the /research skill. Mode "review": after experiments finish, checks leakage, cost model and simulation assumptions, recomputes the headline numbers from saved artifacts, decomposes the result into causes, searches papers, books, forums, the local code and the knowledge base (RAG), and ranks the next tests. Mode "critique": attacks a proposed round of hypotheses before compute is spent. Read-only except its own report folder.
 model: opus

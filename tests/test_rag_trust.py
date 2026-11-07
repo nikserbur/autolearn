@@ -284,19 +284,19 @@ class ModelPython(RagCase):
 
     def test_a_search_started_by_any_python_moves_to_the_configured_one(self):
         self.write("a.md", "# A\n\nmarker_alpha is here.\n")
-        out = self.run_engine("search", "--no-log", "marker_alpha", AUTOLEARN_PYTHON=str(self.wrapper()))
+        out = self.run_engine("search", "--no-log", "marker_alpha", RESEARCH_LAB_PYTHON=str(self.wrapper()))
         self.assertIn("=== a.md", out)
         self.assertEqual((self.dir / "used").read_text().split(), ["used"], "exactly once: it must not loop")
 
     def test_a_bad_setting_is_reported_and_the_search_still_runs(self):
         self.write("a.md", "# A\n\nmarker_alpha is here.\n")
-        out = self.run_engine("search", "--no-log", "marker_alpha", AUTOLEARN_PYTHON=str(self.dir / "nope"))
+        out = self.run_engine("search", "--no-log", "marker_alpha", RESEARCH_LAB_PYTHON=str(self.dir / "nope"))
         self.assertIn("=== a.md", out)
-        self.assertIn("AUTOLEARN_PYTHON", self.stderr)
+        self.assertIn("RESEARCH_LAB_PYTHON", self.stderr)
 
     def test_stdin_survives_the_move(self):
         self.write("a.md", "# A\n\nThe limit is 1200 rps per client.\n")
-        out = self.run_engine("verify", stdin="The limit is 1200 rps per client.\n", AUTOLEARN_PYTHON=str(self.wrapper()))
+        out = self.run_engine("verify", stdin="The limit is 1200 rps per client.\n", RESEARCH_LAB_PYTHON=str(self.wrapper()))
         self.assertIn("FAITHFUL", out)
 
     def built_by_a_model(self):
@@ -309,15 +309,15 @@ class ModelPython(RagCase):
 
     def test_index_without_the_model_fails_and_says_which_python_to_use(self):
         self.built_by_a_model()
-        out = self.run_engine("index", expect=1, AUTOLEARN_EMBED="auto")
+        out = self.run_engine("index", expect=1, RESEARCH_LAB_EMBED="auto")
         self.assertNotIn("Indexed", out)
         self.assertIn("/some/venv/bin/python", self.stderr)
-        self.assertIn("AUTOLEARN_PYTHON", self.stderr)
+        self.assertIn("RESEARCH_LAB_PYTHON", self.stderr)
 
     def test_search_without_the_model_says_new_notes_are_not_seen(self):
         self.built_by_a_model()
         self.write("b.md", "# B\n\nmarker_beta is here.\n")
-        self.run_engine("search", "--no-log", "marker_beta", AUTOLEARN_EMBED="auto")
+        self.run_engine("search", "--no-log", "marker_beta", RESEARCH_LAB_EMBED="auto")
         self.assertIn("not searchable", self.stderr)
         self.assertIn("/some/venv/bin/python", self.stderr)
 
@@ -332,21 +332,21 @@ class FileSizeGuard(RagCase):
         self.big.write_text("a\tb\n" + "".join(f"{i}\tmarker_big {i}\n" for i in range(3000)), encoding="utf-8")
 
     def test_an_oversized_file_is_skipped_and_reported_on_every_search(self):
-        out = self.run_engine("search", "--no-log", "marker_big", AUTOLEARN_MAX_FILE_MB="0.01")
+        out = self.run_engine("search", "--no-log", "marker_big", RESEARCH_LAB_MAX_FILE_MB="0.01")
         self.assertNotIn("=== export.tsv", out)
         self.assertIn("export.tsv", self.stderr)
-        self.assertIn("AUTOLEARN_MAX_FILE_MB", self.stderr)
-        self.run_engine("search", "--no-log", "marker_note", AUTOLEARN_MAX_FILE_MB="0.01")
+        self.assertIn("RESEARCH_LAB_MAX_FILE_MB", self.stderr)
+        self.run_engine("search", "--no-log", "marker_note", RESEARCH_LAB_MAX_FILE_MB="0.01")
         self.assertIn("export.tsv", self.stderr)
 
     def test_status_lists_it(self):
-        self.run_engine("index", AUTOLEARN_MAX_FILE_MB="0.01")
-        self.assertIn("export.tsv", self.run_engine("status", AUTOLEARN_MAX_FILE_MB="0.01"))
+        self.run_engine("index", RESEARCH_LAB_MAX_FILE_MB="0.01")
+        self.assertIn("export.tsv", self.run_engine("status", RESEARCH_LAB_MAX_FILE_MB="0.01"))
 
     def test_a_file_that_grows_past_the_limit_leaves_the_index_and_returns_when_allowed(self):
         self.run_engine("index")
         self.assertIn("=== export.tsv", self.run_engine("search", "--no-log", "marker_big"))
-        self.assertNotIn("=== export.tsv", self.run_engine("search", "--no-log", "marker_big", AUTOLEARN_MAX_FILE_MB="0.01"))
+        self.assertNotIn("=== export.tsv", self.run_engine("search", "--no-log", "marker_big", RESEARCH_LAB_MAX_FILE_MB="0.01"))
         self.assertIn("=== export.tsv", self.run_engine("search", "--no-log", "marker_big"))
         self.assertNotIn("export.tsv", self.stderr)
 
@@ -359,7 +359,7 @@ class GitignoreUpgrade(unittest.TestCase):
 
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
-        self.home = pathlib.Path(self.tmp.name) / "autolearn"
+        self.home = pathlib.Path(self.tmp.name) / "research-lab"
         self.templates = ROOT / "templates"
         self.home.mkdir()
         (self.home / ".gitignore").write_text(self.OLD + "my-own-line\n")
@@ -511,7 +511,7 @@ class FirstRunWithAModel(RagCase):
         super().setUp()
         self.fake_models()
         self.write("a.md", "# A\n\nmarker_alpha is here.\n")
-        self.env_extra.update(AUTOLEARN_EMBED="auto", AUTOLEARN_RERANK="off", FAKE_EMBED_CACHE=str(self.dir / "embed-cached"))
+        self.env_extra.update(RESEARCH_LAB_EMBED="auto", RESEARCH_LAB_RERANK="off", FAKE_EMBED_CACHE=str(self.dir / "embed-cached"))
 
     def test_a_search_never_downloads_a_model(self):
         self.run_engine("search", "--no-log", "marker_alpha")
@@ -555,14 +555,14 @@ class ModelSetup(RagCase):
         (self.home / "model-python").write_text("/x/python")
         sys.path.insert(0, str(ROOT / "hooks"))
         import session_brief
-        env = {k: os.environ.pop(k) for k in list(os.environ) if k in ("AUTOLEARN_PYTHON", "AUTOLEARN_EMBED")}
+        env = {k: os.environ.pop(k) for k in list(os.environ) if k in ("RESEARCH_LAB_PYTHON", "RESEARCH_LAB_EMBED")}
         self.addCleanup(os.environ.update, env)
         self.assertFalse(session_brief.embeddings_missing(self.home))
 
 
 class RouterFences(unittest.TestCase):
     def test_a_comment_in_a_code_fence_does_not_end_a_section(self):
-        spec = importlib.util.spec_from_file_location("kb_route", ROOT / "skills" / "kb-router" / "scripts" / "kb_route.py")
+        spec = importlib.util.spec_from_file_location("kb_route", ROOT / "skills" / "knowledge-search" / "scripts" / "kb_route.py")
         kb_route = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(kb_route)
         with tempfile.TemporaryDirectory() as tmp:

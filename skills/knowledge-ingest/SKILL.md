@@ -1,14 +1,14 @@
 ---
-name: kb-ingest
+name: knowledge-ingest
 description: >
-  Builds the local knowledge base for retrieval (RAG) together with its curated router. Use when the user says "remember this", "add to the knowledge base", "build a page for this repo", after reading docs, wiki pages, code or tickets that will matter again, after a research round whose conclusions matter beyond its project, when kb-router reported a miss, or when docs-scout returned "New for the topic map". Distills sources into chunk-friendly topic and project pages with a source on every fact, registers them in the topic map with keywords and section pointers, embeds the new chunks into the vector store, keeps every file inside its size budget, and commits.
+  Builds the local knowledge base for retrieval (RAG) together with its curated router. Use when the user says "remember this", "add to the knowledge base", "build a page for this repo", after reading docs, wiki pages, code or tickets that will matter again, after a research round whose conclusions matter beyond its project, when knowledge-search reported a miss, or when docs-scout returned "New for the topic map". Distills sources into chunk-friendly topic and project pages with a source on every fact, registers them in the topic map with keywords and section pointers, embeds the new chunks into the vector store, keeps every file inside its size budget, and commits.
 argument-hint: "[repo | <url or path> | <topic>]"
 ---
 
-# kb-ingest - every page it writes is retrievable from day one
+# knowledge-ingest - every page it writes is retrievable from day one
 
-Target: `~/.claude/autolearn/knowledge/` (below: KB). Layout and the topic-block format are
-described in the kb-router skill. The rule of this skill: **no page without a router entry, no
+Target: `~/.claude/research-lab/knowledge/` (below: KB). Layout and the topic-block format are
+described in the knowledge-search skill. The rule of this skill: **no page without a router entry, no
 router entry without a page or a source.**
 
 Argument: `$ARGUMENTS`
@@ -69,7 +69,7 @@ questions about a period filter on them.
 ## 6. Lint, index, commit, report
 Run `python3 "${CLAUDE_SKILL_DIR}/scripts/kb_lint.py"`. The `kb_autoindex` hook has already
 embedded the new chunks; without hooks run
-`python3 "${CLAUDE_SKILL_DIR}/../research/scripts/kb_rag.py" index`. Fix every ERROR
+`python3 "${CLAUDE_SKILL_DIR}/../knowledge-search/scripts/kb_rag.py" index`. Fix every ERROR
 (broken pointer, unroutable page, block without keywords) before committing; act on WARN
 budgets as the table above says.
 If KB is a git repository: `git -C KB add -A && git -C KB commit -m "kb: <topic> (+N facts)"`.

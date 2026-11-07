@@ -22,7 +22,7 @@ import sys
 import tempfile
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-ENGINE = ROOT / "skills" / "research" / "scripts" / "kb_rag.py"
+ENGINE = ROOT / "skills" / "knowledge-search" / "scripts" / "kb_rag.py"
 HIT = re.compile(r"^=== (\S+?):\d+-\d+", re.M)
 
 
@@ -52,12 +52,12 @@ def evaluate(engine: pathlib.Path, corpus: pathlib.Path, golden: pathlib.Path, b
     rows = [line.split("\t") for line in golden.read_text(encoding="utf-8").splitlines()[1:] if line.strip()]
     out = []
     with tempfile.TemporaryDirectory() as tmp:
-        home = pathlib.Path(tmp) / "autolearn"
+        home = pathlib.Path(tmp) / "research-lab"
         shutil.copytree(corpus, home / "knowledge")
-        models = pathlib.Path(os.environ.get("AUTOLEARN_HOME", pathlib.Path.home() / ".claude" / "autolearn")) / "models"
+        models = pathlib.Path(os.environ.get("RESEARCH_LAB_HOME", pathlib.Path.home() / ".claude" / "research-lab")) / "models"
         if models.exists():  # a downloaded model is reused, not fetched again for every private copy
             (home / "models").symlink_to(models.resolve())
-        env = dict(os.environ, AUTOLEARN_HOME=str(home), AUTOLEARN_EMBED=backend, AUTOLEARN_LLM="off")
+        env = dict(os.environ, RESEARCH_LAB_HOME=str(home), RESEARCH_LAB_EMBED=backend, RESEARCH_LAB_LLM="off")
         run(engine, env, "index")
         for kind, question, expected in rows:
             text = run(engine, env, "search", "--no-log", question)
@@ -91,7 +91,7 @@ def main() -> int:
     ap.add_argument("--corpus", type=pathlib.Path, required=True)
     ap.add_argument("--golden", type=pathlib.Path, required=True)
     ap.add_argument("--engine", type=pathlib.Path, default=ENGINE)
-    ap.add_argument("--backend", default="hash", help="AUTOLEARN_EMBED value for the run")
+    ap.add_argument("--backend", default="hash", help="RESEARCH_LAB_EMBED value for the run")
     ap.add_argument("--json", type=pathlib.Path, help="write per-question results here")
     ap.add_argument("--verbose", action="store_true", help="print every question that was not answered")
     a = ap.parse_args()

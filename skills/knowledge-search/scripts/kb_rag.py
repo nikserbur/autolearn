@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Self-routing retrieval (RAG) over the autolearn knowledge base and any research KB. Runs on the
+"""Self-routing retrieval (RAG) over the research-lab knowledge base and any research KB. Runs on the
 standard library; a real embedding model, cross-encoder or small LLM is used when one is around.
 
     kb_rag.py search refund webhook stripe            # the pipeline picks the route; best sections with path:line
@@ -57,7 +57,7 @@ def is_degraded(store: Store, emb) -> bool:
     """Never downgrade a model-built store because this interpreter lacks the model (e.g. the hook runs the
     system python while fastembed lives in a venv): skip updates, rank by words only."""
     built = store.meta["backend"]
-    if os.environ.get("AUTOLEARN_EMBED", "auto").lower() != "auto" or not built:
+    if os.environ.get("RESEARCH_LAB_EMBED", "auto").lower() != "auto" or not built:
         return False
     return not built.startswith("hash") and built != emb.id
 
@@ -65,7 +65,7 @@ def is_degraded(store: Store, emb) -> bool:
 def warn_degraded(store: Store) -> None:
     who = store.meta.get("python") or "the python that has the model"
     print(f"! store was built with {store.meta['backend']}, which this python cannot load: ranking by words only, and "
-          f"new notes are not searchable until {who} runs. Set AUTOLEARN_PYTHON to it, or AUTOLEARN_EMBED=hash to rebuild "
+          f"new notes are not searchable until {who} runs. Set RESEARCH_LAB_PYTHON to it, or RESEARCH_LAB_EMBED=hash to rebuild "
           "without a model.", file=sys.stderr)
 
 
@@ -81,8 +81,8 @@ def cmd_status(store: Store) -> int:
         print(f"late chunking: off (needs a model with token vectors and a {LATE_MIN_WINDOW}+ token window)")
     model = next((m for m in ("fastembed", "sentence_transformers") if installed(m)), None)
     print(f"reranker: {'cross-encoder via ' + model + ' once cached, else built-in' if model else 'built-in'}")
-    want = os.environ.get("AUTOLEARN_LLM", "auto")
-    print(f"llm context: AUTOLEARN_LLM={want} (ollama on this machine when running; otherwise heuristic context)")
+    want = os.environ.get("RESEARCH_LAB_LLM", "auto")
+    print(f"llm context: RESEARCH_LAB_LLM={want} (ollama on this machine when running; otherwise heuristic context)")
     stats = Index(store, store.kb, has_vectors=False).graph.stats() if meta["files"] else {}
     if stats:
         print(f"graph: {stats['entities']} entities, {stats['relations']} typed relations, {stats['clusters']} clusters")
@@ -105,7 +105,7 @@ def cmd_status(store: Store) -> int:
 
 def reranker_ready(store: Store) -> bool:
     try:
-        return (store.dir / "reranker-ready").read_text(encoding="utf-8") == os.environ.get("AUTOLEARN_RERANK_MODEL", "default")
+        return (store.dir / "reranker-ready").read_text(encoding="utf-8") == os.environ.get("RESEARCH_LAB_RERANK_MODEL", "default")
     except OSError:
         return False
 
@@ -114,7 +114,7 @@ def prefetch_reranker(store: Store) -> None:
     """Fetch the cross-encoder here, in the background hook, so that a search never waits for a download."""
     if not reranker_ready(store) and cross_encoder(download=True):
         store.dir.mkdir(parents=True, exist_ok=True)
-        (store.dir / "reranker-ready").write_text(os.environ.get("AUTOLEARN_RERANK_MODEL", "default"), encoding="utf-8")
+        (store.dir / "reranker-ready").write_text(os.environ.get("RESEARCH_LAB_RERANK_MODEL", "default"), encoding="utf-8")
 
 
 def cmd_index(store: Store, a: argparse.Namespace, emb, degraded: bool) -> int:
@@ -189,7 +189,7 @@ def fresh_index(store: Store, a: argparse.Namespace, emb, degraded: bool) -> Ind
 def cmd_search(store: Store, a: argparse.Namespace, emb, degraded: bool) -> int:
     index = fresh_index(store, a, emb, degraded)
     for path in (store.meta.get("skipped") or [])[:3]:
-        print(f"! {path} is over the size limit and not searchable (AUTOLEARN_MAX_FILE_MB changes it)", file=sys.stderr)
+        print(f"! {path} is over the size limit and not searchable (RESEARCH_LAB_MAX_FILE_MB changes it)", file=sys.stderr)
     query = " ".join(" ".join(a.query).split())  # a line break must not forge a line of the log or the report
     if store.building and not index.n:
         print("The first index is being built in the background. Search again in a minute or two; until then use grep.")

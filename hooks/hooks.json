@@ -1,5 +1,5 @@
 {
-  "description": "autolearn: secret guard, session brief with knowledge-base pointers, and knowledge-base auto-indexing.",
+  "description": "research-lab: secret guard, session brief with knowledge-base pointers, and knowledge-base auto-indexing.",
   "hooks": {
     "SessionStart": [
       {

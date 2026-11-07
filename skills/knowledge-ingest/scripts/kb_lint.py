@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Lint the autolearn knowledge base so the router stays fast and correct. Standard library only.
+"""Lint the research-lab knowledge base so the router stays fast and correct. Standard library only.
 
-    kb_lint.py            # check ~/.claude/autolearn/knowledge (or $AUTOLEARN_HOME/knowledge)
+    kb_lint.py            # check ~/.claude/research-lab/knowledge (or $RESEARCH_LAB_HOME/knowledge)
     kb_lint.py --kb DIR
 
 Errors (exit 1): broken `read first` pointers, pages no topic block points to (unroutable),
-topic blocks without `keywords:`. Warnings: size budgets from the kb-ingest skill.
+topic blocks without `keywords:`. Warnings: size budgets from the knowledge-ingest skill.
 """
 from __future__ import annotations
 
@@ -19,8 +19,8 @@ BUDGETS = {"block_lines": 8, "map_bytes": 25_000, "topic_bytes": 40_000, "projec
 
 
 def kb_dir() -> pathlib.Path:
-    env = os.environ.get("AUTOLEARN_HOME")
-    base = pathlib.Path(env).expanduser() if env else pathlib.Path.home() / ".claude" / "autolearn"
+    env = os.environ.get("RESEARCH_LAB_HOME")
+    base = pathlib.Path(env).expanduser() if env else pathlib.Path.home() / ".claude" / "research-lab"
     return base / "knowledge"
 
 
