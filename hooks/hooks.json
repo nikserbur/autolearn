@@ -1,5 +1,5 @@
 {
-  "description": "autolearn: secret guard, feedback capture, routing brief, knowledge-base auto-indexing, and the /feature pipeline gates (scoped to their agents by agent_type).",
+  "description": "autolearn: secret guard, session brief with knowledge-base pointers, and knowledge-base auto-indexing.",
   "hooks": {
     "SessionStart": [
       {
@@ -13,17 +13,6 @@
         ]
       }
     ],
-    "UserPromptSubmit": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/capture_feedback.py\"",
-            "timeout": 5
-          }
-        ]
-      }
-    ],
     "PreToolUse": [
       {
         "matcher": "Bash",
@@ -32,27 +21,6 @@
             "type": "command",
             "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/check_secrets.py\"",
             "timeout": 20
-          },
-          {
-            "type": "command",
-            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/planner_guard.py\"",
-            "timeout": 5
-          },
-          {
-            "type": "command",
-            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/test_output_filter.py\"",
-            "timeout": 5
-          }
-        ]
-      }
-    ],
-    "SubagentStop": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/verify_gate.py\"",
-            "timeout": 900
           }
         ]
       }

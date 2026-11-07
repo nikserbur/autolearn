@@ -27,7 +27,7 @@ jobs:
       - name: Installer round trip in a sandbox
         run: |
           sandbox="$(mktemp -d)/claude"
-          ./install.sh --claude-dir "$sandbox" --with-claude-md --deny-push
+          ./install.sh --claude-dir "$sandbox" --with-claude-md
           ./install.sh --claude-dir "$sandbox"          # idempotent
           ./uninstall.sh --claude-dir "$sandbox"
           if grep -q 'hooks/autolearn/' "$sandbox/settings.json"; then echo "hooks left in settings"; exit 1; fi
@@ -35,9 +35,9 @@ jobs:
       - name: Installer protects and restores a clashing user file
         run: |
           sandbox="$(mktemp -d)/claude"
-          mkdir -p "$sandbox/skills/learn" && echo mine > "$sandbox/skills/learn/SKILL.md"
+          mkdir -p "$sandbox/skills/research" && echo mine > "$sandbox/skills/research/SKILL.md"
           if ./install.sh --claude-dir "$sandbox"; then echo "should have stopped on the clash"; exit 1; fi
-          [ "$(cat "$sandbox/skills/learn/SKILL.md")" = mine ]
+          [ "$(cat "$sandbox/skills/research/SKILL.md")" = mine ]
           ./install.sh --claude-dir "$sandbox" --force
           ./uninstall.sh --claude-dir "$sandbox"
-          [ "$(cat "$sandbox/skills/learn/SKILL.md")" = mine ]
+          [ "$(cat "$sandbox/skills/research/SKILL.md")" = mine ]

@@ -20,9 +20,8 @@ Argument: `$ARGUMENTS`
 
 ## 1. Read (cheaply)
 - Small source (< ~30 KB): read it directly.
-- Large source, many pages, or a whole repo: delegate to a subagent (`Explore` for code,
-  `al-docs-scout` for docs) with the question "what will someone need to know again?" and take back
-  facts with citations. Do not pull the whole thing into the main context.
+- Large source, many pages, or a whole repo: delegate to a subagent (`Explore`) with the question
+  "what will someone need to know again?" and take back facts with citations. Do not pull the whole thing into the main context.
 - Pages the map marks ⛔: do not crawl them; record the link only.
 
 ## 2. Distill into the page
@@ -40,8 +39,8 @@ Topic page `KB/topics/<slug>.md`, sections in this order (skip empty ones):
 Project page `KB/projects/<repo>.md` (from the repo's README, CLAUDE.md, CONTRIBUTING, docs/,
 build files and CI config):
 `## Purpose` · `## Layout` (entry points with paths) · `## Commands` (exact build / test / lint
-lines) · `## Conventions` (with the source file) · `## Decisions` (ADRs, links) · `## Pitfalls`
-(link `~/.claude/autolearn/lessons/<repo>.md`) · `## Sources`.
+lines) · `## Conventions` (with the source file) · `## Decisions` (ADRs, links) · `## Pitfalls` ·
+`## Sources`.
 
 ## 3. Register in the router (same step, not later)
 In `KB/topic-map.md`, create or extend the topic block:

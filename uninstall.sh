@@ -66,7 +66,7 @@ if "allow" in perms:
     perms["allow"] = [r for r in perms["allow"] if "hooks/autolearn/" not in r]
 p.write_text(json.dumps(cfg, indent=2, ensure_ascii=False) + "\n")
 PY
-  echo "  removed autolearn hooks from settings.json (a git push deny rule, if added, is kept)"
+  echo "  removed autolearn hooks from settings.json"
 fi
 if grep -qx 'claude-md' "$MANIFEST" && [ -e "$CLAUDE_DIR/CLAUDE.md" ]; then
   cp -L "$CLAUDE_DIR/CLAUDE.md" "$BACKUP/CLAUDE.md"

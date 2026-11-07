@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # autolearn installer: copies agents, skills and hooks into ~/.claude, seeds the data directory
-# ~/.claude/autolearn (never overwritten), and registers four global hooks in settings.json.
+# ~/.claude/autolearn (never overwritten), and registers three global hooks in settings.json.
 #
 #   ./install.sh                   install or upgrade; stops before changing anything if one of
 #                                  your own files has the same name as an autolearn file
@@ -8,23 +8,21 @@
 #   ./install.sh --force           replace such files too; your originals are backed up and put
 #                                  back by ./uninstall.sh
 #   ./install.sh --with-claude-md  also add the routing-table block to ~/.claude/CLAUDE.md
-#   ./install.sh --deny-push       also deny `git push` for the agent in settings.json
 #   ./install.sh --no-settings     do not touch settings.json
 #   ./install.sh --claude-dir D    install somewhere else (for testing)
 set -euo pipefail
 
 SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CLAUDE_DIR="${HOME}/.claude"
-DRY=0 FORCE=0 WITH_MD=0 DENY_PUSH=0 SETTINGS=1
+DRY=0 FORCE=0 WITH_MD=0 SETTINGS=1
 while [ $# -gt 0 ]; do
   case "$1" in
     --dry-run) DRY=1 ;;
     --force) FORCE=1 ;;
     --with-claude-md) WITH_MD=1 ;;
-    --deny-push) DENY_PUSH=1 ;;
     --no-settings) SETTINGS=0 ;;
     --claude-dir) CLAUDE_DIR="$2"; shift ;;
-    -h|--help) sed -n '2,13p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,12p' "$0"; exit 0 ;;
     *) echo "unknown option: $1" >&2; exit 2 ;;
   esac
   shift
@@ -105,17 +103,17 @@ record "file	hooks/autolearn"
 if [ "$DRY" = 1 ]; then say "  [dry-run] seed $AL from templates (existing files are kept)"
 else python3 "$SRC/hooks/_seed.py" "$AL" "$SRC/templates"; fi
 
-# 5. settings.json: four global hooks (+ optional push deny), idempotent, with a backup
+# 5. settings.json: three global hooks, idempotent, with a backup
 if [ "$SETTINGS" = 1 ]; then
   SETTINGS_FILE="$CLAUDE_DIR/settings.json"
   if exists "$SETTINGS_FILE"; then backup "$SETTINGS_FILE" >/dev/null || exit 1; fi
   if [ "$DRY" = 1 ]; then
-    say "  [dry-run] register SessionStart, UserPromptSubmit, PreToolUse(Bash) and PostToolUse(Write|Edit) hooks in $SETTINGS_FILE"
+    say "  [dry-run] register SessionStart, PreToolUse(Bash) and PostToolUse(Write|Edit) hooks in $SETTINGS_FILE"
   else
     CUSTOM_HOME=""; [ "$CLAUDE_DIR" != "$HOME/.claude" ] && CUSTOM_HOME="$AL"
-    python3 - "$SETTINGS_FILE" "$HOOKS_DST" "$DENY_PUSH" "$CUSTOM_HOME" <<'PY'
+    python3 - "$SETTINGS_FILE" "$HOOKS_DST" "$CUSTOM_HOME" <<'PY'
 import json, pathlib, shlex, sys
-path, hooks, deny_push, custom = pathlib.Path(sys.argv[1]), sys.argv[2], sys.argv[3] == "1", sys.argv[4]
+path, hooks, custom = pathlib.Path(sys.argv[1]), sys.argv[2], sys.argv[3]
 try:
     text = path.read_text() if path.exists() else ""
     cfg = json.loads(text) if text.strip() else {}
@@ -126,7 +124,6 @@ def cmd(name):  # a non-default --claude-dir also needs its data dir passed to t
     return f'{prefix}python3 "{hooks}/{name}"'
 wanted = [
     ("SessionStart", "startup|resume|clear|compact", cmd("session_brief.py"), 10),
-    ("UserPromptSubmit", None, cmd("capture_feedback.py"), 5),
     ("PreToolUse", "Bash", cmd("check_secrets.py"), 20),
     ("PostToolUse", "Write|Edit|MultiEdit", cmd("kb_autoindex.py"), 10),
 ]
@@ -139,16 +136,6 @@ for event, matcher, command, timeout in wanted:
     if matcher:
         group = {"matcher": matcher, **group}
     groups.append(group)
-# let subagents run the test-output filter without a prompt (it only reads stdin)
-allow = cfg.setdefault("permissions", {}).setdefault("allow", [])
-rule = f"Bash(python3 {hooks}/test_output_filter.py --filter)"
-if rule not in allow:
-    allow.append(rule)
-if deny_push:
-    deny = cfg.setdefault("permissions", {}).setdefault("deny", [])
-    for rule in ("Bash(git push)", "Bash(git push *)"):
-        if rule not in deny:
-            deny.append(rule)
 path.parent.mkdir(parents=True, exist_ok=True)
 path.write_text(json.dumps(cfg, indent=2, ensure_ascii=False) + "\n")  # writes through a symlink
 PY
@@ -183,5 +170,4 @@ say "done. backups (if anything was replaced): $BACKUP"
 say "next:"
 say "  - restart Claude Code (hooks load at session start)"
 [ "$WITH_MD" = 0 ] && say "  - optional: ./install.sh --with-claude-md adds the routing table to ~/.claude/CLAUDE.md"
-say "  - put your team's checklists into $AL/knowledge/required-docs.md"
-say "  - try:  /kb-ingest repo   /feature \"small task\"   /merge-check   /skill-radar"
+say "  - try:  /kb-ingest repo   /research \"your question\""

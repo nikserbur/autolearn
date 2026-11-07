@@ -4,8 +4,8 @@
     python3 _seed.py <data-dir> <templates-dir>
 
 Used by install.sh and, in plugin mode, by session_brief.py on the first session. Creates the
-folder layout, copies empty skeleton files, writes the runs.tsv header and .gitignore, and puts
-the directory under git (a failed first commit, e.g. no git identity, is not an error).
+folder layout, copies the empty topic map, writes .gitignore and puts the directory under git
+(a failed first commit, e.g. no git identity, is not an error).
 """
 from __future__ import annotations
 
@@ -14,18 +14,9 @@ import shutil
 import subprocess
 import sys
 
-DIRS = ["knowledge/topics", "knowledge/projects", "lessons", "runs", "inbox", "style", "radar", "proposals"]
-FILES = {
-    "knowledge/topic-map.md": "knowledge/topic-map.md",
-    "knowledge/required-docs.md": "knowledge/required-docs.md",
-    "lessons/pipeline.md": "lessons/pipeline.md",
-    "lessons/global.md": "lessons/global.md",
-    "style/messages.md": "style/messages.md",
-    "feedback-patterns.json": "feedback-patterns.json",
-}
-RUNS_HEADER = ("date\trepo\tslug\tmode\ttasks\tcritic_rounds\tcritic_blocking\treview_rounds\t"
-               "findings_confirmed\tfindings_refuted\tgate_blocks\tmerge_gate_findings\toutcome\n")
-GITIGNORE = "runs/\ninbox/\n.install-manifest\n.brief-state.json\n__pycache__/\nknowledge/.rag/\nknowledge/.stream/\n"
+DIRS = ["knowledge/topics", "knowledge/projects"]
+FILES = {"knowledge/topic-map.md": "knowledge/topic-map.md"}
+GITIGNORE = ".install-manifest\n.brief-state.json\n__pycache__/\nknowledge/.rag/\nknowledge/.stream/\n"
 
 
 def ensure_ignored(home: pathlib.Path) -> None:
@@ -59,10 +50,9 @@ def seed(home: pathlib.Path, templates: pathlib.Path) -> list:
         if not target.exists() and (templates / src).exists():
             shutil.copyfile(templates / src, target)
             created.append(dst)
-    for rel, text in (("lessons/runs.tsv", RUNS_HEADER), (".gitignore", GITIGNORE)):
-        if not (home / rel).exists():
-            (home / rel).write_text(text)
-            created.append(rel)
+    if not (home / ".gitignore").exists():
+        (home / ".gitignore").write_text(GITIGNORE)
+        created.append(".gitignore")
     ensure_ignored(home)
     if shutil.which("git") and not (home / ".git").exists():
         run = lambda *a: subprocess.run(["git", "-C", str(home), *a], capture_output=True)

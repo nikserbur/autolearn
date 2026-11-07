@@ -12,8 +12,7 @@ The knowledge base lives in `~/.claude/autolearn/knowledge/` (below: KB):
 KB/topic-map.md        the router: one "## <topic>" block per topic (keywords -> what to read)
 KB/topics/<slug>.md    distilled notes per topic, every fact with a source
 KB/projects/<repo>.md  one page per repository: purpose, layout, commands, conventions, pitfalls
-KB/required-docs.md    checklists every task must be checked against
-KB/.router-log.tsv     hits and misses (feeds kb-ingest and /learn)
+KB/.router-log.tsv     hits and misses (shows kb-ingest what is missing)
 KB/.rag/               the index: meta.json + vectors.f32 + changes.jsonl, updated by the
                        kb_autoindex hook on every write and on every search
 ```
@@ -62,7 +61,7 @@ the user's explicit request).
 4. **Curated route** when the sections are thin or you need the reading order a topic block
    prescribes: `python3 "${CLAUDE_SKILL_DIR}/scripts/kb_route.py" <keyword> ...` resolves the
    topic map's `read first` pointers to line ranges. Need more than 8 KB? Delegate the reading
-   to a subagent (Explore or `al-docs-scout`) and take back a summary with citations.
+   to a subagent (Explore) and take back a summary with citations.
 5. **Answer** from what you retrieved, citing `KB/topics/x.md:120` or the original source link.
    Say what is ✅ verified and what comes from 🔎 search snippets only.
 6. **Check the draft** when it holds numbers or ids, or rests on an `AMBIGUOUS` or `global` result:
@@ -75,7 +74,7 @@ the user's explicit request).
    identical question is a hit.
 8. **Log** (only if you retrieved by hand) one line: `printf '%s	%s	%s	%s
 ' "$(date +%F)" "<query>" "<path:line or ->" "hit|partial|miss" >> KB/.router-log.tsv`.
-   Repeated misses on the same words are how /learn notices a missing topic.
+   Repeated misses on the same words point to a missing topic: offer kb-ingest for it.
 
 ## Rules
 

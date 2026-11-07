@@ -122,7 +122,7 @@ def check_manifests() -> None:
 def is_multilingual_data(f: pathlib.Path) -> bool:
     """Files whose subject is other languages: pattern and word lists, and the tests of multilingual retrieval."""
     rel = f.relative_to(ROOT).as_posix()
-    return f.name in ("feedback-patterns.json", "lang.json") or rel.startswith("tests/fixtures/rag/") \
+    return f.name == "lang.json" or rel.startswith("tests/fixtures/rag/") \
         or bool(re.fullmatch(r"tests/test_rag_\w+\.py", rel))
 
 
@@ -151,31 +151,6 @@ def check_retrieval_languages() -> None:
             errors.append(f"ragkit/lang.json: {code} needs 12 month slots")
 
 
-def check_feedback_patterns() -> None:
-    path = ROOT / "templates" / "feedback-patterns.json"
-    try:
-        langs = json.loads(path.read_text(encoding="utf-8"))["languages"]
-    except (OSError, ValueError, KeyError) as e:
-        errors.append(f"templates/feedback-patterns.json: {e}")
-        return
-    kinds = ("correction", "rule", "approval", "escaped_bug")
-    for code, lang in langs.items():
-        ex = lang.get("examples", {})
-        for kind in kinds + ("neutral",):
-            if not ex.get(kind):
-                errors.append(f"feedback-patterns.json: {code} has no '{kind}' example")
-        for kind, rxs in lang.get("patterns", {}).items():
-            if kind not in kinds:
-                errors.append(f"feedback-patterns.json: {code} has unknown kind '{kind}'")
-            for rx in rxs:
-                try:
-                    re.compile(rx)
-                except re.error as e:
-                    errors.append(f"feedback-patterns.json: {code}/{kind}: bad regex {rx!r} ({e})")
-    if len(langs) < 15:
-        warnings.append(f"feedback-patterns.json: {len(langs)} languages (README promises 15)")
-
-
 def check_python() -> None:
     for f in sorted(ROOT.rglob("*.py")):
         if ".git" in f.parts:
@@ -193,7 +168,6 @@ def main() -> int:
     check_manifests()
     check_python()
     check_english_only()
-    check_feedback_patterns()
     check_retrieval_languages()
     for w in warnings:
         print(f"WARN   {w}")
