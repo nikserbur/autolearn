@@ -12,6 +12,6 @@
 
 ## Components
 - [skills/](skills/): research, knowledge-search, knowledge-ingest
-- [agents/](agents/): rl-hypothesis-reviewer, rl-source-scout
+- [agents/](agents/): rl-hypothesis-reviewer, rl-source-scout, rl-executor
 - [hooks/](hooks/): session_brief, kb_autoindex, check_secrets
 - [templates/](templates/): CLAUDE.md routing table, topic map

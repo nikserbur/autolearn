@@ -1,7 +1,7 @@
 {
   "name": "research-lab",
   "displayName": "research-lab",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "description": "A research lab for Claude Code: hypotheses run in a simulation environment with written requirements, an independent reviewer compares expected with actual behaviour stage by stage and turns every discrepancy into the next hypothesis, a candidate is judged once on a holdout, and a self-routing local knowledge base (hybrid search, GraphRAG, corrective RAG, contextual retrieval, reranking, incremental updates) keeps every result for later questions in any project.",
   "author": {
     "name": "Nikita Burakov",

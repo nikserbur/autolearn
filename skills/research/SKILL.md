@@ -114,7 +114,7 @@ accepts the risk (quote it in `PROGRAM.md`). V1-V5 are proven for a candidate be
 (`--stage verify`).
 
 ## 3. Round plan
-Write `KB/rounds/R<n>.md` from the template, one row per hypothesis in its plan:
+Write `KB/rounds/R<NN>.md` from the template, one row per hypothesis in its plan:
 `H<n>.<k> | hypothesis | rationale (KB path:line or review) | expected effect | cost (hours) | pass criterion | status`.
 `PROGRAM.md` stays short; a round lives in its own file, so no one reads every round to plan the next.
 - Derive hypotheses from the last review's "Next tests", its discrepancies, the KB and the user's
@@ -143,10 +143,9 @@ in the round file's "Critique", and add the missing hypotheses it found. Skip on
    candidate; `metrics.tsv` holds one row of totals (aggregate seeds and days before writing it), and
    `daily.tsv` one row per day or period (`period`, `pnl` or the value the strategy is judged on). It records the candidate hash and the attempt
    (every attempt is a trial, crashes included), moves stale outputs aside, logs to
-   `results/<id>/run.log`, and writes `RUN.json` and `DONE`. Long jobs: start it in the background
-   with a monitor; never stop or touch other people's processes, no `pkill`.
+   `results/<id>/run.log`, and writes `RUN.json` and `DONE`. Nobody stops or touches other people's processes; no `pkill`.
 3. The executor checks the trace (`LAB trace results/<id>/trace.tsv --expect KB/expect/<id>.md`);
-   look-ahead makes the run `INVALID`.
+   when it reports look-ahead or a broken trace, set the row's decision to `INVALID` yourself.
 4. While jobs run, do the next useful thing (another hypothesis, a cheap analysis), not polling;
    `LAB jobs --lab <folder>` says which runs are going, which ended and which were interrupted.
 

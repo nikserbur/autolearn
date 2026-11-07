@@ -6,59 +6,54 @@ from __future__ import annotations
 
 import collections
 import datetime
-import os
 import pathlib
 import re
 
 from . import tables
 from .ledger import Ledger
-from .protocol import current_best, journal
-
-KNOWLEDGE_CAP = 30_000  # bytes of KNOWLEDGE.md before older sections go to KB/archive/
+from .protocol import KNOWLEDGE_CAP, current_best, fail, journal, live, runs, trial_count
 
 
-def alive(pid) -> bool:
-    if not pid:
-        return False
-    if os.name == "nt":  # no cheap liveness check: say "unknown" rather than kill-probe
-        return True
-    try:
-        os.kill(int(pid), 0)
-    except ProcessLookupError:
-        return False
-    except (OSError, ValueError):
-        return True
-    return True
-
-
-def jobs(ledger: Ledger) -> list:
-    """Every run in ledger order: id, start, state (running, interrupted, done, crashed), exit, seconds.
-    A run that started and never ended is running while its process lives, interrupted after."""
-    waiting, out = collections.defaultdict(list), []
-    for e in ledger.entries():
-        if e.get("kind") == "run_start":
-            job = {"id": e["id"], "seq": e["seq"], "start": e["ts"], "state": None, "exit": None, "seconds": None,
-                   "pid": e.get("pid")}
-            out.append(job)
-            waiting[e["id"]].append(job)
-        elif e.get("kind") == "run_end" and waiting[e["id"]]:
-            job = waiting[e["id"]].pop(0)
-            job.update(state="done" if e["exit"] == 0 else "crashed", exit=e["exit"], seconds=e["seconds"])
-    for job in out:
-        if job["state"] is None:
-            job["state"] = "running" if alive(job["pid"]) else "interrupted"
+def jobs(lab: pathlib.Path, ledger: Ledger) -> list:
+    """Every run in ledger order: id, start, state (running, interrupted, done, crashed), exit, seconds."""
+    out = []
+    for job in runs(ledger):
+        start, end = job["start"], job["end"]
+        if end is None:
+            state = "running" if live(lab, start) else "interrupted"
+        elif end.get("interrupted"):
+            state = "interrupted"
+        else:
+            state = "done" if end.get("exit") == 0 else "crashed"
+        out.append({"id": start["id"], "seq": start.get("seq"), "start": start.get("ts", "?"), "state": state,
+                    "exit": end.get("exit") if end else None, "seconds": end.get("seconds") if end else None,
+                    "pid": start.get("pid")})
     return out
 
 
-def awaiting_review(ledger: Ledger) -> list:
-    """Experiments whose latest run is judged but has no reviewer verdict yet."""
-    out = []
-    for id in dict.fromkeys(e["id"] for e in ledger.find("judge")):
-        run = ledger.last("run_start", id)
-        judged = ledger.last("judge", id)
-        reviewed = [r for r in ledger.find("review", id) if run and r["run_seq"] == run["seq"]]
-        if run and judged and judged.get("run_seq") == run["seq"] and not reviewed:
-            out.append(id)
+def waiting(lab: pathlib.Path, ledger: Ledger) -> list:
+    """What the research owes, experiment by experiment, in the order it should be done."""
+    rows, out = journal(lab), []
+    registered = {e.get("id") for e in ledger.find("register")}
+    latest = {}
+    for job in jobs(lab, ledger):
+        latest[job["id"]] = job
+    for id, job in latest.items():
+        if job["state"] == "running":
+            out.append(f"- {id}: running since {job['start']} (pid {job['pid']}); `lab.py jobs` shows when it ends")
+        elif job["state"] == "interrupted":
+            out.append(f"- {id}: interrupted (started {job['start']}); rerun it with `lab.py run --again` or drop it")
+        else:
+            judged = ledger.last("judge", id)
+            if not judged or judged.get("run_seq") != job["seq"]:
+                out.append(f"- {id}: {job['state']}, not judged yet: collect it (trace) and run `lab.py judge`")
+            elif judged.get("verdict") == "PASS" and not any(r.get("run_seq") == job["seq"] for r in ledger.find("review", id)):
+                out.append(f"- {id}: judged PASS, awaiting the reviewer's verdict")
+    for id in sorted(i for i in registered - set(latest) if isinstance(i, str)):
+        out.append(f"- {id}: registered, never run")
+    for id, row in rows.items():
+        if id not in registered and not row.get("result", "").strip():
+            out.append(f"- {id}: in the journal but not registered (`lab.py register`)")
     return out
 
 
@@ -68,64 +63,70 @@ def summary(lab: pathlib.Path) -> list:
     lines = [f"# Status: {lab.name}", "",
              f"Written by `lab.py status` on {datetime.datetime.now().isoformat(timespec='minutes')}; "
              "regenerate it, do not edit it.", ""]
+    for problem in ledger.broken()[:3]:
+        lines.append(f"- LEDGER PROBLEM: {problem} (`lab.py check`)")
     env = lab / "KB" / "ENVIRONMENT.md"
+    open_sim = []
     if not env.exists():
         lines.append("- No ENVIRONMENT.md yet: write it before round 1")
     for stage, name in (("sim", "Simulation"), ("verify", "Verification")) if env.exists() else ():
         reqs = tables.requirements(env, stage)
         open_ = tables.unproven(reqs)
-        lines.append(f"- {name} requirements: {len(reqs) - len(open_)} of {len(reqs)} proven"
-                     + (f" (open: {', '.join(o.split(':')[0] for o in open_)})" if open_ else ""))
-    rounds = sorted({r.get("round", "") for r in rows.values() if r.get("round", "").strip()},
-                    key=lambda r: (len(r), r))
+        open_sim = open_ if stage == "sim" else open_sim
+        lines.append(f"- {name} requirements: " + (f"{len(reqs) - len(open_)} of {len(reqs)} proven" if reqs else
+                     "no requirement table") + (f" (open: {', '.join(o.split(':')[0] for o in open_)})" if open_ else ""))
+    rounds = sorted({r.get("round", "") for r in rows.values() if r.get("round", "").strip()}, key=lambda r: (len(r), r))
     decisions = collections.Counter((r.get("decision", "").strip() or "pending").upper() for r in rows.values())
     lines.append(f"- Rounds: {len(rounds)}" + (f" (latest {rounds[-1]})" if rounds else "")
                  + f"; experiments: {len(rows)} (" + ", ".join(f"{k} {v}" for k, v in sorted(decisions.items())) + ")")
     tests = ledger.find("stats")
-    trials = len(ledger.find("run_start")) + sum(max(0, e.get("configs", 1) - 1) for e in tests)
-    lines.append(f"- Trials: {trials}; tested runs: {len(tests)}; discoveries under LORD++: "
+    lines.append(f"- Trials: {trial_count(ledger)}; tested runs: {len(tests)}; discoveries under LORD++: "
                  f"{sum(1 for e in tests if e.get('discovery'))}")
     best = current_best(ledger)
+    stale = False
     if best:
-        st = next((e for e in reversed(ledger.find("stats", best["id"])) if e["run_seq"] == best["run_seq"]), {})
-        lines.append(f"- Best: {best['id']}" + (f", mean {st['mean']:.4g} per period (95% interval {st['lo']:.4g} to "
-                                                f"{st['hi']:.4g}), deflated Sharpe {st['dsr']:.3f}" if st.get("sharpe") is not None else ""))
-        history = [e["id"] for e in ledger.find("best")]
+        st = next((e for e in reversed(ledger.find("stats", best.get("id"))) if e.get("run_seq") == best.get("run_seq")), {})
+        latest = ledger.last("run_start", best.get("id")) or {}
+        stale = latest.get("seq") != best.get("run_seq")
+        numbers = (f", mean {st['mean']:.4g} per period (95% interval {st['lo']:.4g} to {st['hi']:.4g}), "
+                   f"deflated Sharpe {st['dsr']:.3f}") if st.get("sharpe") is not None else ""
+        lines.append(f"- Best: {best.get('id')}{numbers}" + (" (it has run again since: the best refers to an "
+                                                             "earlier run and cannot go to the holdout)" if stale else ""))
+        history = [e.get("id") for e in ledger.find("best")]
         if len(history) > 1:
-            lines.append(f"- Best over time: {' -> '.join(history)}")
+            lines.append(f"- Best over time: {' -> '.join(map(str, history))}")
     else:
         lines.append("- Best: none yet")
     opens, closes = ledger.find("holdout_open"), ledger.find("holdout_close")
-    budget = opens[0]["budget"] if opens else None
+    budget = opens[0].get("budget") if opens else None
     lines.append(f"- Holdout: {len(opens)} look(s)" + (f" of {budget}" if budget else "")
-                 + "".join(f"; {c['id']} {c['verdict']}" for c in closes))
-    running = [j for j in jobs(ledger) if j["state"] in ("running", "interrupted")]
-    review = awaiting_review(ledger)
+                 + "".join(f"; {c.get('id')} {c.get('verdict')}" for c in closes))
     knowledge = lab / "KB" / "KNOWLEDGE.md"
     discrepancies = 0
     if knowledge.exists():
-        m = re.search(r"(?ms)^## Discrepancies.*?$(.*?)(?=^## |\Z)", knowledge.read_text(encoding="utf-8"))
+        m = re.search(r"(?ms)^## Discrepancies.*?$(.*?)(?=^## |\Z)", knowledge.read_text(encoding="utf-8", errors="replace"))
         discrepancies = len(re.findall(r"(?m)^\s*- (?!<)", m.group(1))) if m else 0
     lines.append(f"- Discrepancies recorded: {discrepancies}")
-    lines += ["", "## Next"]
-    nexts = [f"- {j['id']}: running since {j['start']} (pid {j['pid']}); `lab.py jobs` shows when it ends"
-             for j in running if j["state"] == "running"]
-    nexts += [f"- {j['id']}: interrupted (started {j['start']}, no end); rerun with `lab.py run --again`"
-              for j in running if j["state"] == "interrupted"]
-    nexts += [f"- {id}: judged, awaiting the reviewer's verdict" for id in review]
-    for stage, reqs in (("simulation", tables.requirements(env, "sim")),):
-        if reqs and tables.unproven(reqs):
-            nexts.append(f"- prove the open {stage} requirements before the next round")
-    if best and not any(o["id"] == best["id"] for o in opens):
-        nexts.append(f"- {best['id']} is the best but has not been looked at on the holdout")
+    nexts = waiting(lab, ledger)
+    if open_sim:
+        nexts.append("- prove the open simulation requirements before the next round")
+    if best and not stale and not any(o.get("id") == best.get("id") for o in opens):
+        nexts.append(f"- {best.get('id')} is the best but has not been looked at on the holdout")
     if knowledge.exists() and knowledge.stat().st_size > KNOWLEDGE_CAP:
-        nexts.append("- KNOWLEDGE.md is over 30 KB: move older sections to KB/archive/")
-    lines += nexts or ["- nothing pending: plan the next round"]
-    return lines
+        nexts.append(f"- KNOWLEDGE.md is over {KNOWLEDGE_CAP // 1000} KB: move older sections to KB/archive/")
+    return lines + ["", "## Next"] + (nexts or ["- nothing pending: plan the next round"])
+
+
+def missing_lab(lab: pathlib.Path) -> int:
+    if not (lab / "KB").is_dir():
+        return fail(f"{lab} is not a research folder (no KB/ in it): --lab names research/<slug>")
+    return 0
 
 
 def cmd_jobs(a) -> int:
-    found = jobs(Ledger(a.lab))
+    if missing_lab(a.lab):
+        return 1
+    found = jobs(a.lab, Ledger(a.lab))
     if not found:
         print("no runs yet")
         return 0
@@ -137,6 +138,8 @@ def cmd_jobs(a) -> int:
 
 
 def cmd_status(a) -> int:
+    if missing_lab(a.lab):
+        return 1
     lines = summary(a.lab)
     (a.lab / "STATUS.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
     print("\n".join(lines))

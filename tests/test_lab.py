@@ -3,6 +3,7 @@
     python3 -m unittest discover -s tests -v
 """
 import json
+import os
 import pathlib
 import subprocess
 import sys
@@ -225,7 +226,7 @@ class Protocol(LabCase):
         self.assertIn("has run already", self.run_toy("E1", expect=1))
         self.run_toy("E1", "--honest", again=True)
         self.assertIn("E1: FAIL  (2 trials", self.p("judge", "E1", expect=1))
-        self.assertIn("1 registered, 2 runs (trials), 1 PASS / 1 FAIL", self.p("check"))
+        self.assertIn("1 registered, 2 runs (2 trials), 1 PASS / 1 FAIL", self.p("check"))
 
     def test_edits_after_registration_are_caught(self):
         self.p("register", "E1")
@@ -439,10 +440,80 @@ class Protocol(LabCase):
         self.assertTrue((self.labdir / "STATUS.md").exists())
         self.assertIn("- Best: E1, mean", status)
         self.assertIn("E3: interrupted", status)
-        self.assertIn("E2: judged, awaiting the reviewer's verdict", status)
+        self.assertIn("E2: judged PASS, awaiting the reviewer's verdict", status)
         self.assertIn("E1 is the best but has not been looked at on the holdout", status)
         self.assertIn("Trials: 3", status)
         self.assertFalse((self.labdir / "KB" / "STATUS.md").exists())
+
+    def test_a_rerun_after_an_interruption_is_paired_right_and_the_dead_run_is_closed(self):
+        self.p("register", "E1")
+        sys.path.insert(0, str(LAB.parent))
+        from labkit.ledger import Ledger
+        Ledger(self.labdir).append("run_start", id="E1", command=["x"], candidate="c", hashes={}, pid=999999)
+        self.assertIn("E1\tinterrupted", self.p("jobs"))
+        self.series("E1", 0.3, 1, again=True)
+        jobs = self.p("jobs").splitlines()[1:]
+        self.assertEqual([j.split("\t")[1] for j in jobs], ["interrupted", "done"])
+        tests = [e for e in map(json.loads, (self.labdir / "LEDGER.jsonl").read_text().splitlines()) if e["kind"] == "stats"]
+        self.assertEqual([t["p"] == 1.0 for t in tests], [True, False])  # the dead run spent its test
+        self.assertNotIn("interrupted", self.p("status").split("## Next")[1])
+
+    def test_a_live_run_of_the_same_id_blocks_another(self):
+        self.p("register", "E1")
+        sys.path.insert(0, str(LAB.parent))
+        from labkit.ledger import Ledger
+        start = Ledger(self.labdir).append("run_start", id="E1", command=["x"], candidate="c", hashes={}, pid=os.getpid())
+        beat = self.labdir / "results" / "E1" / f".heartbeat-{start['seq']}"
+        beat.parent.mkdir(parents=True, exist_ok=True)
+        beat.touch()
+        self.assertIn("E1 is still running", self.series("E1", 0.3, 1, again=True, expect=1))
+        os.utime(beat, (0, 0))  # its heartbeat went quiet: the pid now belongs to someone else
+        self.assertIn("E1\tinterrupted", self.p("jobs"))
+
+    def test_trials_agree_everywhere_and_count_a_sweep(self):
+        self.p("register", "E1")
+        script = self.write("sweep.py", "import sys, pathlib, random\nout = pathlib.Path(sys.argv[1]); out.mkdir(parents=True, exist_ok=True)\n"
+                            "r = random.Random(1); v = [0.5 + r.gauss(0, 1) for _ in range(100)]\n"
+                            "(out / 'daily.tsv').write_text('period\\tpnl\\n' + ''.join(f'd{i}\\t{x}\\n' for i, x in enumerate(v)))\n"
+                            "(out / 'metrics.tsv').write_text(f'net_per_trade\\ttrades\\tconfigs\\n{sum(v)/100}\\t100\\t40\\n')\n")
+        out = self.p("run", "E1", "--code", script, "--", sys.executable, script, str(self.labdir / "results" / "E1"))
+        self.assertIn("40 trials so far", out)
+        self.assertIn("40 trials so far", self.p("judge", "E1"))
+        self.assertIn("(40 trials)", self.p("check"))
+        self.assertIn("Trials: 40", self.p("status"))
+
+    def test_next_lists_what_is_owed(self):
+        self.p("register", "E1")
+        self.series("E1", 0.3, 1)
+        self.row("E2", "net_per_trade > 0 & trades >= 30")
+        self.write("research/toy/KB/expect/E2.md", "x")
+        self.p("register", "E2")
+        self.row("E3", "net_per_trade > 0 & trades >= 30")
+        status = self.p("status")
+        self.assertIn("E1: done, not judged yet", status)
+        self.assertIn("E2: registered, never run", status)
+        self.assertIn("E3: in the journal but not registered", status)
+        self.assertNotIn("nothing pending", status)
+
+    def test_a_best_that_ran_again_is_stale(self):
+        self.make_best("E1", 0.5, 1)
+        self.series("E1", 0.5, 1, again=True)
+        status = self.p("status")
+        self.assertIn("refers to an earlier run", status)
+        self.assertNotIn("has not been looked at on the holdout", status)
+
+    def test_status_needs_a_research_folder(self):
+        self.assertIn("not a research folder", self.lab("status", "--lab", str(self.dir / "nope"), expect=1))
+
+    def test_every_lab_command_the_prompts_name_exists(self):
+        import re
+        names = set()
+        for path in [ROOT / "skills" / "research" / "SKILL.md", *sorted((ROOT / "agents").glob("*.md"))]:
+            names |= set(re.findall(r"(?:lab\.py|LAB) ([a-z]+)\b", path.read_text()))
+        known = set(re.findall(r'"(\w+)": (?:protocol|selection|status|cmd)', (LAB).read_text()))
+        known |= {"env", "trace", "truncate", "sample", "repro"}
+        prose = {"is", "command", "commands", "the", "prints", "writes", "keeps", "says"}
+        self.assertFalse(names - known - prose, names - known - prose)
 
     def test_a_long_knowledge_file_is_flagged(self):
         self.write("research/toy/KB/KNOWLEDGE.md", "# Knowledge\n\n" + "## Note\n- x\n" * 4000)

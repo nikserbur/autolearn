@@ -6,6 +6,41 @@ All notable changes to this project are documented here. The format follows
 with every release, or plugin users will not receive the update. Up to 0.3.1 the project was
 called autolearn.
 
+## [0.8.0] - 2026-11-07
+
+Phase 4 of the [v2 architecture](docs/architecture-v2.md): a research survives a crash or a new
+session, and the controller's context stops growing with every round. An independent review of the
+first version found the run pairing, the Next list, the session brief and the trial counts wrong in
+ways a resumed session would trust; all are fixed, each with a test.
+
+### Added
+- `lab.py jobs`: every run as running, interrupted, done or crashed. A run is running only while
+  its `lab.py` process lives and its heartbeat (touched every 30 s) is fresh, so a reused pid or a
+  Windows machine does not keep a dead run alive. A run end names its start, and jobs, status,
+  check and the session brief share one pairing.
+- `lab.py status` writes `STATUS.md` beside the KB (never indexed): requirements, rounds and
+  decisions, trials and discoveries, the best (flagged when it has run again since), holdout looks,
+  discrepancies, and a Next list of what is owed: running, interrupted, run but not judged, judged
+  PASS but not reviewed, registered but never run, in the journal but not registered.
+- The session brief names each active research of the project from its ledger, with sanitised
+  ids, and survives a broken ledger.
+- `rl-executor` (Sonnet) runs one registered experiment through `lab.py run`: in the foreground when
+  short, otherwise in the background with a launch log, collected on a second call; it runs only
+  `check`, `run`, `jobs`, `trace` and `stats`.
+- `ROUND-TEMPLATE.md`: one file per round (`KB/rounds/R<NN>.md`) with plan, critique and outcome,
+  each labelled; the reviewer's critique goes to `reviews/R<NN>_critique.md`, one line per
+  hypothesis in its reply.
+
+### Changed
+- One trial count for `judge`, `check`, `status` and the deflated Sharpe: every start, interrupted
+  ones included, plus a run's own `configs` sweep.
+- A dead run left without an end is closed when the next run starts, as an interrupted run with a
+  test of p = 1, so it spends the LORD++ budget like any other; a live run of the same id blocks
+  another.
+- `KNOWLEDGE.md` stays under 30 KB, older sections in `KB/archive/` (`check` warns); `PROGRAM.md`
+  no longer holds round tables. The reviewer searches the web only for flagged questions or what
+  the KB, the code and the sources leave open.
+
 ## [0.7.0] - 2026-11-07
 
 Phase 3 of the [v2 architecture](docs/architecture-v2.md): typed knowledge. An independent review of

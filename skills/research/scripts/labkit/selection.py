@@ -18,7 +18,7 @@ import statistics
 
 from . import stats
 from .ledger import Ledger, read_metrics, sha256_file, text_lines
-from .protocol import bad_id, current_best, fail, journal, judged_latest, latest_run
+from .protocol import bad_id, current_best, fail, journal, judged_latest, latest_run, trial_count
 
 MIN_PERIODS = 20
 MIN_DSR = 0.95
@@ -77,8 +77,7 @@ def record_test(lab: pathlib.Path, ledger: Ledger, id: str, run: dict, exit_code
 
     def compute(led: Ledger) -> dict:
         settings, prior = research_settings(led), led.find("stats")
-        # every start is a trial, interrupted ones included, and a sweep inside a run counts as its size
-        trials = len(led.find("run_start")) + sum(max(0, e.get("configs", 1) - 1) for e in prior) + configs - 1
+        trials = trial_count(led) + configs - 1  # this run's own sweep is not in the record yet
         fields = {"id": id, "run_seq": run["seq"], "candidate": run["candidate"], "round": row.get("round", ""),
                   "configs": configs, "trials": trials, **{f"setting_{k}": v for k, v in settings.items()}}
         try:

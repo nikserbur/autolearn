@@ -8,7 +8,7 @@ Claude runs research the way a careful lab does: it writes down what it expects 
 
 [![CI](https://github.com/nikserbur/research-lab/actions/workflows/ci.yml/badge.svg)](https://github.com/nikserbur/research-lab/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-0.7.0-informational)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.8.0-informational)](CHANGELOG.md)
 [![Claude Code plugin](https://img.shields.io/badge/Claude%20Code-plugin-D97757)](#install)
 
 </div>
@@ -33,7 +33,7 @@ Restart Claude Code. The first session creates the data directory `~/.claude/res
 | | Background mode | Direct mode: `/research` |
 |---|---|---|
 | What it is for | answering from what is already known | producing new knowledge |
-| Who works | the main session, no subagents | the session as controller, plus `rl-source-scout` and `rl-hypothesis-reviewer` |
+| Who works | the main session, no subagents | the session as controller (plans, keeps state, talks to you), `rl-source-scout` (collects), `rl-executor` (runs), `rl-hypothesis-reviewer` (judges) |
 | Parts | `knowledge-search`, `knowledge-ingest`, three hooks | the research loop, its environments, `lab.py` |
 | Writes to | the global knowledge base | `research/<slug>/KB/` in the project; durable facts are promoted to the global base |
 | Cost | close to zero, never interrupts | real compute and tokens; starts when you ask for research |
@@ -94,7 +94,9 @@ lab.py holdout --lab research/mm open E7   # one look budget per research; any f
 lab.py brief --lab research/mm research/mm/BRIEF_2026-11-07.md   # every number traces to the record
 ```
 
-Every attempt is a trial, crashes included, and every reported result carries the trial count. The verification report goes to `sealed/`, outside the knowledge base, so what the holdout showed cannot shape the next hypothesis.
+Every attempt is a trial, crashes and interrupted runs included, and every reported result carries the trial count.
+
+A research outlives the session that started it. `lab.py jobs` says which runs are going, which ended and which were interrupted; `lab.py status` writes `STATUS.md` with what waits for whom; the session brief names every active research of the project, so the next session starts from files, not from memory. Each round is its own file (`KB/rounds/R<NN>.md`), and `KNOWLEDGE.md` keeps the current state under 30 KB with the rest archived, so the context does not grow with the number of rounds. The verification report goes to `sealed/`, outside the knowledge base, so what the holdout showed cannot shape the next hypothesis.
 
 ### Statistics that know how many things were tried
 
@@ -266,7 +268,7 @@ updated: 2026-10-21
 ## What's inside
 
 - **Skills (3):** `research` (the direct mode), `knowledge-search` (retrieval, with the RAG engine), `knowledge-ingest` (the only writer of the global base, and the source rules).
-- **Agents (2, prefixed `rl-`):** `rl-hypothesis-reviewer` (critique, review with expected against actual, verify), `rl-source-scout` (collects what is known, with sources).
+- **Agents (3, prefixed `rl-`):** `rl-hypothesis-reviewer` (critique, review with expected against actual, verify), `rl-source-scout` (collects what is known, with sources), `rl-executor` (runs one registered experiment and reports).
 - **Hooks (3):** session brief, knowledge-base auto-indexing, secret guard on commits.
 - **Scripts:** `kb_rag.py` (retrieval), `kb_route.py` (curated router), `kb_lint.py` (router linter), `lab.py` (environment checks), plus `scripts/rag_eval.py` and `scripts/validate.py` for this repo.
 
@@ -274,12 +276,13 @@ Every component with its trigger and purpose: [docs/components.md](docs/componen
 
 ```text
 research/<slug>/              in your project, one folder per research
-├── KB/                       PROGRAM, ENVIRONMENT, KNOWLEDGE, EXPERIMENTS.tsv, expect/, sources/,
-│                             reviews/, BRIEF_<date>.md  (indexed for retrieval)
+├── KB/                       PROGRAM, ENVIRONMENT, KNOWLEDGE, EXPERIMENTS.tsv, rounds/, archive/,
+│                             sources/, reviews/, BRIEF_<date>.md  (indexed); expect/ (not indexed)
+├── STATUS.md                 where it stands, written by lab.py status
 ├── LEDGER.jsonl              registrations, runs, verdicts, holdout looks; hash-chained, lab.py only
 ├── sealed/                   verification reports, never indexed
 ├── scripts/                  numbered scripts, run from frozen copies
-└── results/<id>/             metrics.tsv, trace.tsv, models and predictions
+└── results/<id>/             metrics.tsv, daily.tsv, trace.tsv, RUN.json, run.log, models, predictions
 
 ~/.claude/research-lab/       your data, a git repo
 ├── knowledge/                topic map, topics, projects, the index
@@ -322,7 +325,7 @@ See [SECURITY.md](SECURITY.md) and [docs/hooks.md](docs/hooks.md).
 
 ## Status and limitations
 
-- **v0.7.0.** The hooks and scripts are covered by tests. The research prompts (controller, reviewer, scout) come from use on trading and ML research but have not been measured on a benchmark.
+- **v0.8.0.** The hooks and scripts are covered by tests. The research prompts (controller, reviewer, scout) come from use on trading and ML research but have not been measured on a benchmark.
 - **The environment checks are as good as the runs behind them.** `lab.py truncate` finds a look-ahead only across the cut you choose, so cut at several times; whether costs are realistic is the reviewer's judgement, not a script's.
 - **The ledger guards against drift, not against a determined forger.** Hashes catch edits to registered rows, expectations and the ledger itself; nothing stops someone from rewriting the whole ledger, or from running experiments outside `lab.py`, though `check` flags results that were never registered.
 - **The statistics assume a value per period.** The deflated Sharpe and the bootstrap need `daily.tsv`; with fewer than 20 periods a run counts as a test with p = 1. LORD++ grows strict as runs pile up without a discovery, so a long research needs stronger evidence for each new result; that is the point, and it can make a real but small edge go unrecognised. Strongly persistent daily results (lag-one correlation near 0.9) are still called significant too often: 9% at 5% in simulation. LORD++'s guarantee assumes independent p-values, and runs on the same days are not. PBO by combinatorial cross-validation is not implemented.

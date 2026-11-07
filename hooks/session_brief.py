@@ -48,42 +48,69 @@ EMBED_HINT = ("RAG has no embedding model (stdlib hashing: weaker, no cross-lang
               "the next kb_rag.py search rebuilds the store.")
 
 
+SAFE = re.compile(r"[^A-Za-z0-9._-]")
+
+
+def plain(text) -> str:
+    """A name from someone else's repo, reduced to a harmless token before it enters the context."""
+    return SAFE.sub("", str(text))[:40] or "?"
+
+
+def research_line(root: pathlib.Path, path: pathlib.Path) -> str:
+    entries = []
+    for line in read(path).split("\n"):
+        try:
+            entry = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(entry, dict) and isinstance(entry.get("id"), str):
+            entries.append(entry)
+    jobs, by_seq = [], {}
+    for e in entries:  # the same pairing as lab.py: the end names its start, or the latest open start of its id
+        if e.get("kind") == "run_start":
+            job = {"id": e["id"], "seq": e.get("seq"), "end": None}
+            jobs.append(job)
+            by_seq[e.get("seq")] = job
+        elif e.get("kind") == "run_end":
+            job = by_seq.get(e.get("start_seq")) or next((j for j in reversed(jobs) if j["id"] == e["id"] and j["end"] is None), None)
+            if job is not None and job["end"] is None:
+                job["end"] = e
+    unfinished = list(dict.fromkeys(j["id"] for j in jobs if j["end"] is None))
+    latest = {j["id"]: j["seq"] for j in jobs}
+    passed = {e["id"] for e in entries if e.get("kind") == "judge" and e.get("verdict") == "PASS"
+              and e.get("run_seq") == latest.get(e["id"])}
+    reviewed = {e["id"] for e in entries if e.get("kind") == "review" and e.get("run_seq") == latest.get(e["id"])}
+    best = next((e["id"] for e in reversed(entries) if e.get("kind") == "best"), None)
+    bits = [f"{len(jobs)} runs"]
+    if unfinished:
+        bits.append(f"{len(unfinished)} unfinished ({', '.join(plain(i) for i in unfinished[:3])})")
+    if passed - reviewed:
+        bits.append(f"{len(passed - reviewed)} awaiting review")
+    if best:
+        bits.append(f"best {plain(best)}")
+    return (f"Research {plain(path.parent.name)}: {', '.join(bits)} - research/{plain(path.parent.name)}/STATUS.md "
+            "(`lab.py status` writes it); resume /research from there.")
+
+
 def active_research(root: pathlib.Path) -> list:
     """One line per research folder of this project (the three touched last): runs, unfinished runs,
-    experiments waiting for the reviewer, the best one. Read from its ledger; content never enters."""
+    experiments waiting for the reviewer, the best one. Counts and sanitised ids only; never content."""
+    found = []
     try:
-        ledgers = sorted(root.glob("research/*/LEDGER.jsonl"), key=lambda p: p.stat().st_mtime, reverse=True)[:3]
+        candidates = list(root.glob("research/*/LEDGER.jsonl"))
     except OSError:
         return []
+    for path in candidates:
+        try:
+            found.append((path.stat().st_mtime, path))
+        except OSError:  # a dangling link: skip that one, keep the others
+            continue
     out = []
-    for path in ledgers:
-        entries = []
-        for line in read(path).split("\n"):
-            try:
-                entry = json.loads(line)
-            except ValueError:
-                continue
-            if isinstance(entry, dict):
-                entries.append(entry)
-        starts = [e for e in entries if e.get("kind") == "run_start"]
-        open_runs = {}
-        for e in entries:
-            if e.get("kind") in ("run_start", "run_end"):
-                open_runs[e.get("id")] = open_runs.get(e.get("id"), 0) + (1 if e["kind"] == "run_start" else -1)
-        unfinished = [i for i, n in open_runs.items() if n > 0]
-        latest = {e.get("id"): e.get("seq") for e in starts}
-        judged = {e.get("id") for e in entries if e.get("kind") == "judge" and e.get("run_seq") == latest.get(e.get("id"))}
-        reviewed = {e.get("id") for e in entries if e.get("kind") == "review" and e.get("run_seq") == latest.get(e.get("id"))}
-        best = next((e.get("id") for e in reversed(entries) if e.get("kind") == "best"), None)
-        bits = [f"{len(starts)} runs"]
-        if unfinished:
-            bits.append(f"{len(unfinished)} unfinished ({', '.join(map(str, unfinished[:3]))})")
-        if judged - reviewed:
-            bits.append(f"{len(judged - reviewed)} awaiting review")
-        if best:
-            bits.append(f"best {best}")
-        out.append(f"Research {path.parent.name}: {', '.join(bits)} - {path.parent.relative_to(root)}/STATUS.md "
-                   "(`lab.py status` refreshes it); resume /research from there.")
+    for _, path in sorted(found, reverse=True)[:3]:
+        try:
+            out.append(research_line(root, path))
+        except Exception:  # a broken ledger must not take the rest of the brief down
+            out.append(f"Research {plain(path.parent.name)}: its LEDGER.jsonl could not be read - run `lab.py check`.")
     return out
 
 

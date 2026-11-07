@@ -4,6 +4,7 @@ folder (`research/<slug>`), which holds KB/, results/, sealed/ and LEDGER.jsonl.
 """
 from __future__ import annotations
 
+import contextlib
 import datetime
 import json
 import os
@@ -11,6 +12,7 @@ import pathlib
 import re
 import shutil
 import subprocess
+import threading
 import time
 
 from . import tables
@@ -18,6 +20,8 @@ from .ledger import ID, Ledger, judge, parse_criterion, read_journal, read_metri
 
 PRE_RUN = ("id", "round", "hypothesis", "change", "expected", "pass_criterion", "commit", "data", "seed")
 MAX_LOOKS = 3  # more looks than this and the holdout is a selection set
+KNOWLEDGE_CAP = 30_000  # bytes of KNOWLEDGE.md before older sections go to KB/archive/
+HEARTBEAT_EVERY, HEARTBEAT_STALE = 30, 120  # seconds: a run whose heartbeat is older than this is not running
 # Decimals and percentages anywhere; whole numbers of 10 and more unless part of a date, time, id or version
 BRIEF_NUMBER = re.compile(r"(?<![\w.,:/-])[-+]?(?:\d+\.\d+%?|\d+%|\d{2,})(?![\w%]|[.,:/-]\d)")
 CELL_NUMBER = re.compile(r"[-+]?\d+(?:\.\d+)?")
@@ -33,6 +37,59 @@ def bad_id(a):
     if getattr(a, "id", None) and not ID.match(a.id):
         return fail(f"id {a.id!r}: letters, digits, '.', '_' and '-' only, starting with a letter or digit")
     return 0
+
+
+def runs(ledger: Ledger) -> list:
+    """Every start with its end: the end that names its start (`start_seq`), or for older ledgers the
+    latest open start of the same id before it. One pairing for jobs, status, check and the brief."""
+    out, by_seq = [], {}
+    for e in ledger.entries():
+        if not isinstance(e.get("id"), str):
+            continue
+        if e.get("kind") == "run_start":
+            job = {"start": e, "end": None}
+            out.append(job)
+            by_seq[e.get("seq")] = job
+        elif e.get("kind") == "run_end":
+            job = by_seq.get(e.get("start_seq")) or next(
+                (j for j in reversed(out) if j["start"]["id"] == e["id"] and j["end"] is None), None)
+            if job is not None and job["end"] is None:
+                job["end"] = e
+    return out
+
+
+def pid_alive(pid) -> bool:
+    try:
+        pid = int(pid)
+    except (TypeError, ValueError, OverflowError):
+        return False
+    if pid <= 0 or os.name == "nt":  # os.kill(pid, 0) would interrupt the process on Windows: the heartbeat decides
+        return pid > 0
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except (OSError, OverflowError):
+        return True
+    return True
+
+
+def heartbeat(lab: pathlib.Path, start: dict) -> pathlib.Path:
+    return lab / "results" / start["id"] / f".heartbeat-{start['seq']}"
+
+
+def live(lab: pathlib.Path, start: dict) -> bool:
+    """Running: its lab.py process is alive and its heartbeat is fresh. A reused pid has no heartbeat."""
+    try:
+        fresh = time.time() - heartbeat(lab, start).stat().st_mtime < HEARTBEAT_STALE
+    except OSError:
+        fresh = None  # an older run, from before heartbeats: the pid alone decides
+    return fresh is not False and pid_alive(start.get("pid")) and (fresh or os.name != "nt")
+
+
+def trial_count(ledger: Ledger) -> int:
+    """Every start is a trial, interrupted ones included, and a sweep inside a run counts as its size."""
+    return len(ledger.find("run_start")) + sum(max(0, int(e.get("configs") or 1) - 1) for e in ledger.find("stats"))
 
 
 def latest_run(ledger: Ledger, id: str):
@@ -106,6 +163,15 @@ def cmd_run(a) -> int:
         return fail(f"{a.id} was looked at on the holdout; it cannot change. A new candidate gets a new id")
     if ledger.find("run_start", a.id) and not a.again:
         return fail(f"{a.id} has run already; --again runs it once more and counts as another trial")
+    from . import selection  # every run is a test, recorded as it ends
+    for job in runs(ledger):  # close dead runs first, so they count as tests with p = 1
+        if job["end"] is None and not live(a.lab, job["start"]):
+            start = job["start"]
+            ledger.append("run_end", id=start["id"], exit=-1, seconds=None, interrupted=True, start_seq=start["seq"],
+                          metrics_sha="", daily_sha="")
+            selection.record_test(a.lab, ledger, start["id"], start, -1)
+        elif job["end"] is None and job["start"]["id"] == a.id:
+            return fail(f"{a.id} is still running (pid {job['start'].get('pid')}); let it end before running it again")
     hashes = {}
     for role, paths in (("code", a.code), ("config", a.config), ("data", a.data)):
         for p in paths:
@@ -123,26 +189,39 @@ def cmd_run(a) -> int:
     if (out / "DONE").exists():
         (out / "DONE").unlink()
     start = time.time()
-    ledger.append("run_start", id=a.id, command=a.command, candidate=candidate, hashes=hashes, pid=os.getpid())
+    entry = ledger.append("run_start", id=a.id, command=a.command, candidate=candidate, hashes=hashes, pid=os.getpid())
+    beat, stop = heartbeat(a.lab, entry), threading.Event()
+    beat.touch()
+
+    def pulse():
+        while not stop.wait(HEARTBEAT_EVERY):
+            beat.touch()
+
+    threading.Thread(target=pulse, daemon=True).start()
     info = {"id": a.id, "command": a.command, "candidate": candidate, "pid": os.getpid(),
             "start": datetime.datetime.now().isoformat(timespec="seconds")}
     (out / "RUN.json").write_text(json.dumps(info, indent=1), encoding="utf-8")
     with (out / "run.log").open("w", encoding="utf-8") as log:
         try:
-            code = subprocess.run(a.command, stdout=log, stderr=subprocess.STDOUT,
-                                  env=dict(os.environ, RESEARCH_LAB_RUN=a.id)).returncode
+            child = subprocess.Popen(a.command, stdout=log, stderr=subprocess.STDOUT,
+                                     env=dict(os.environ, RESEARCH_LAB_RUN=a.id))
+            info["child_pid"] = child.pid
+            (out / "RUN.json").write_text(json.dumps(info, indent=1), encoding="utf-8")
+            code = child.wait()
         except OSError as e:
             log.write(f"lab.py: could not start the command: {e}\n")
             code = 127
+    stop.set()
     seconds = round(time.time() - start, 1)
-    ledger.append("run_end", id=a.id, exit=code, seconds=seconds, metrics_sha=sha256_file(out / "metrics.tsv"),
-                  daily_sha=sha256_file(out / "daily.tsv"))
+    ledger.append("run_end", id=a.id, exit=code, seconds=seconds, start_seq=entry["seq"],
+                  metrics_sha=sha256_file(out / "metrics.tsv"), daily_sha=sha256_file(out / "daily.tsv"))
+    with contextlib.suppress(OSError):
+        beat.unlink()
     info.update(end=datetime.datetime.now().isoformat(timespec="seconds"), exit=code, seconds=seconds)
     (out / "RUN.json").write_text(json.dumps(info, indent=1), encoding="utf-8")
     (out / "DONE").write_text(f"{code}\n", encoding="utf-8")
     print(f"{a.id}: exit {code} after {seconds} s, candidate {candidate}, log results/{a.id}/run.log")
-    from . import selection  # every run is a test, recorded as it ends
-    for line in selection.describe(selection.record_test(a.lab, ledger, a.id, ledger.last("run_start", a.id), code)):
+    for line in selection.describe(selection.record_test(a.lab, ledger, a.id, entry, code)):
         print(line)
     return code
 
@@ -172,7 +251,7 @@ def cmd_judge(a) -> int:
         except KeyError as e:
             return fail(f"results/{a.id}/metrics.tsv has no finite value for {e}")
         metrics = {name: metrics[name] for name, _, _ in clauses}
-    trials = len(ledger.find("run_start"))
+    trials = trial_count(ledger)
     ledger.append("judge", id=a.id, verdict=verdict, metrics=metrics, trials=trials,
                   run_seq=run["seq"], candidate=run["candidate"])
     print(f"{a.id}: {verdict}  ({trials} trial{'s' if trials != 1 else ''} so far in this research)")
@@ -182,11 +261,7 @@ def cmd_judge(a) -> int:
 
 
 def unfinished(ledger: Ledger) -> list:
-    out = []
-    for start in ledger.find("run_start"):
-        if not any(e["seq"] > start["seq"] for e in ledger.find("run_end", start["id"])):
-            out.append(start)
-    return out
+    return [job["start"] for job in runs(ledger) if job["end"] is None]
 
 
 RETIRED = re.compile(r"(?:^|[·;|])[\s>*_`+-]*status[*_`\s]*:[*_`\s]*(invalid|invalidated|retracted|wrong|superseded|obsolete|replaced)\b",
@@ -239,7 +314,7 @@ def cmd_check(a) -> int:
     warnings = [f"{e['id']}: started {e['ts']} (pid {e.get('pid')}), no end: running, or crashed" for e in unfinished(ledger)]
     errors += still_valid(a.lab, [id for id, row in rows.items() if "INVALID" in row.get("decision", "").upper()])
     knowledge = a.lab / "KB" / "KNOWLEDGE.md"
-    if knowledge.exists() and knowledge.stat().st_size > 30_000:
+    if knowledge.exists() and knowledge.stat().st_size > KNOWLEDGE_CAP:
         warnings.append(f"KNOWLEDGE.md is {knowledge.stat().st_size // 1000} KB: keep the current state there and move "
                         "older sections to KB/archive/KNOWLEDGE-<date>.md (still searched, no longer read in full)")
     if len(best) > 1:
@@ -252,7 +327,7 @@ def cmd_check(a) -> int:
         warnings.append(f"{recorded_best['id']} is BEST in the ledger; mark its row BEST")
     judged = [e["verdict"] for e in ledger.find("judge")]
     tests = ledger.find("stats")
-    print(f"{len(registered)} registered, {len(ledger.find('run_start'))} runs (trials), "
+    print(f"{len(registered)} registered, {len(ledger.find('run_start'))} runs ({trial_count(ledger)} trials), "
           f"{judged.count('PASS')} PASS / {judged.count('FAIL')} FAIL / {judged.count('CRASH')} CRASH, "
           f"{len(tests)} tested ({sum(e['discovery'] for e in tests)} discoveries), "
           f"best {recorded_best['id'] if recorded_best else '-'}, {len(ledger.find('holdout_open'))} holdout look(s)")

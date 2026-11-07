@@ -64,12 +64,14 @@ and trace samples, the processes that are running right now, the resource limits
    direction is a blocking finding, with the rule quoted.
 
 ## Mode "critique": attack the proposed round before it runs
-For every hypothesis in the round table: is it already answered in `KNOWLEDGE.md` or a past
+For every hypothesis in the round file (`RES/rounds/R<NN>.md`): is it already answered in `KNOWLEDGE.md` or a past
 review (cite it)? Is the expected effect large enough to see with the data and the noise level?
 Is the pass criterion fixed before the run and free of test-set tuning? Is the cost honest? Does
-it break a user rule? What cheaper test answers the same question? Return KEEP / CUT / CHANGE per
-hypothesis and the missing hypotheses the evidence points to. A hypothesis without an expect file
-that says what each stage should do is not ready to run.
+it break a user rule? What cheaper test answers the same question? Write
+`RES/reviews/R<NN>_critique.md`: KEEP / CUT / CHANGE per hypothesis with the reason, and the missing
+hypotheses the evidence points to; reply with one line per hypothesis (`H2.3 CHANGE: ...`) so the
+controller can copy it into the round file's "Critique". A hypothesis without an expect file that
+says what each stage should do is not ready to run.
 
 ## Mode "verify": judge a frozen candidate once
 1. Prove V1-V5 of `ENVIRONMENT.md` for this candidate (`lab.py env RES/ENVIRONMENT.md --stage verify`):
