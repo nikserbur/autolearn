@@ -1,16 +1,26 @@
 #!/usr/bin/env python3
-"""Checks for the environments of a research loop. Standard library only, Python 3.9+.
+"""The research loop's protocol and environment checks. Standard library only, Python 3.9+.
 
-    lab.py env KB/ENVIRONMENT.md                     requirements still unproven (exit 1 if any)
-    lab.py trace results/E7/trace.tsv [--expect KB/expect/E7.md]
-                                                     the decision trace is usable and looks only back (exit 1 if not)
+Protocol (state lives in <lab>/LEDGER.jsonl, append-only and hash-chained; <lab> is research/<slug>):
+    lab.py register --lab DIR ID                     fix the journal row and expect/ID.md; parse the criterion
+    lab.py run --lab DIR ID [--code F] [--config F] [--data F] [--again] -- COMMAND ...
+                                                     run it, record the candidate hash and every attempt
+    lab.py judge --lab DIR ID                        apply the registered criterion to results/ID/metrics.tsv
+    lab.py check --lab DIR                           edits after registration, KEEP without PASS, broken chain
+    lab.py holdout --lab DIR open|close|status [ID] [--metrics F] [--budget N]
+                                                     one look budget per research, opened before the run
+    lab.py brief --lab DIR BRIEF.md                  every number in the brief traces to the record
+
+Environment:
+    lab.py env KB/ENVIRONMENT.md [--stage sim|verify]
+                                                     requirements still unproven (exit 1 if any)
+    lab.py trace results/E7/trace.tsv [--expect KB/expect/E7.md] [--min-delay SECONDS]
+                                                     the decision trace is usable and looks only back
+    lab.py truncate FULL_TRACE CUT_TRACE --at T      decisions before T are the same with the data cut at T
     lab.py sample results/E7/trace.tsv [--n 3] [--metric outcome] [--seed 0]
                                                      decisions for the reviewer to read one by one
-    lab.py holdout KB/HOLDOUT.tsv log --candidate C --result R [--by WHO]
-    lab.py holdout KB/HOLDOUT.tsv status [--budget 1]
-                                                     looks at the verification data (exit 1 if over budget)
-    lab.py repro --out FILE [--out FILE ...] [--runs 2] -- COMMAND ...
-                                                     the same command gives the same files (exit 1 if not)
+    lab.py repro --out FILE [--out FILE ...] [--runs 2] [--timeout S] -- COMMAND ...
+                                                     the same command rewrites the same files
 
 A trace is a TSV with a header or JSON lines, one row per decision. Required: ts, stage, action.
 Expected: inputs (what the decision looked at), reason, outcome. Optional: inputs_ts (the newest
@@ -29,11 +39,13 @@ import re
 import subprocess
 import sys
 
+from labkit import protocol
+
 REQUIRED = ("ts", "stage", "action")
 EXPECTED = ("inputs", "reason", "outcome")
 PROVEN = {"✅", "ok", "yes", "pass", "done"}
 NOT_APPLICABLE = {"n/a", "na", "-"}
-HOLDOUT_HEADER = "date\tcandidate\tresult\tby\n"
+STAGE_PREFIX = {"sim": "S", "verify": "V"}
 
 
 def read_trace(path: pathlib.Path) -> list:
@@ -81,6 +93,8 @@ def table_rows(text: str, needs: tuple) -> list:
 
 def cmd_env(a) -> int:
     rows = table_rows(pathlib.Path(a.file).read_text(encoding="utf-8"), ("requirement", "status"))
+    if a.stage != "all":
+        rows = [r for r in rows if r.get("#", "").upper().startswith(STAGE_PREFIX[a.stage])]
     if not rows:
         print(f"! no requirement table (columns Requirement, Status, Evidence) in {a.file}")
         return 1
@@ -117,7 +131,8 @@ def cmd_trace(a) -> int:
     for c in EXPECTED:
         if rows and c not in columns:
             warnings.append(f"no {c} column: the reviewer cannot see {'what decisions looked at' if c == 'inputs' else c}")
-    last, bad_ts, back, ahead = {}, [], [], []
+    last, bad_ts, back, ahead, same = {}, [], [], [], 0
+    delay = a.min_delay or 0.0
     for n, r in enumerate(rows, 2 if pathlib.Path(a.file).suffix not in (".jsonl", ".json") else 1):
         t = when(r.get("ts"))
         if t is None:
@@ -128,14 +143,22 @@ def cmd_trace(a) -> int:
             back.append(n)
         last[stream] = max(t, last.get(stream, t))
         seen = when(r.get("inputs_ts"))
-        if seen is not None and seen > t:
+        if seen is not None and (seen > t - delay if a.min_delay else seen > t):
             ahead.append(n)
+        same += seen is not None and seen == t
     if bad_ts and "ts" in columns:
         errors.append(f"{len(bad_ts)} rows with an unreadable ts (first: line {bad_ts[0]})")
     if back:
         errors.append(f"time goes back within a stream on {len(back)} rows (first: line {back[0]})")
     if ahead:
-        errors.append(f"look-ahead: inputs newer than the decision on {len(ahead)} rows (first: line {ahead[0]})")
+        what = f"less than {delay:g} s before the decision" if a.min_delay else "newer than the decision"
+        errors.append(f"look-ahead: inputs {what} on {len(ahead)} rows (first: line {ahead[0]})")
+    if rows and "inputs_ts" not in columns:
+        (errors if a.min_delay else warnings).append(
+            "no inputs_ts column: look-ahead is not checked, so this trace is no evidence for S1")
+    elif rows and same == len(rows) and not a.min_delay:
+        warnings.append("inputs_ts equals ts on every row: self-reported, not evidence for S1; "
+                        "prove it with `lab.py truncate` or give --min-delay")
     if rows and "inputs" in columns:
         blind = sum(1 for r in rows if not str(r.get("inputs") or "").strip())
         if blind:
@@ -192,29 +215,27 @@ def cmd_sample(a) -> int:
     return 0
 
 
-def cmd_holdout(a) -> int:
-    path = pathlib.Path(a.file)
-    if a.action == "log":
-        if not a.candidate or a.result is None:
-            print("! log needs --candidate and --result")
-            return 2
-        if not path.exists():
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(HOLDOUT_HEADER, encoding="utf-8")
-        clean = lambda s: re.sub(r"\s+", " ", s).strip()
-        with path.open("a", encoding="utf-8") as f:
-            f.write(f"{datetime.date.today().isoformat()}\t{clean(a.candidate)}\t{clean(a.result)}\t{clean(a.by)}\n")
-    looks = collections.OrderedDict()
-    if path.exists():
-        for row in read_trace(path):
-            looks.setdefault(row.get("candidate", ""), []).append(row.get("result", ""))
-    spoiled = [c for c, r in looks.items() if len(r) > a.budget]
-    for c, results in looks.items():
-        state = "SPOILED: over the look budget" if c in spoiled else "ok"
-        print(f"{c}\t{len(results)} look(s)\tlast: {results[-1]}\t{state}")
-    if not looks:
-        print("no looks at the verification data yet")
-    return 1 if spoiled else 0
+def decisions_before(path: pathlib.Path, cut: float) -> list:
+    keep = ("ts", "stream", "stage", "action", "inputs")
+    return [tuple(str(r.get(k, "")) for k in keep) for r in read_trace(path) if (when(r.get("ts")) or cut) < cut]
+
+
+def cmd_truncate(a) -> int:
+    cut = when(a.at)
+    if cut is None:
+        print(f"! cannot read --at {a.at}")
+        return 2
+    full, short = decisions_before(pathlib.Path(a.full), cut), decisions_before(pathlib.Path(a.cut), cut)
+    for n, (x, y) in enumerate(zip(full, short), 1):
+        if x != y:
+            print(f"! decision {n} before {a.at} differs: full data {x[2]} {x[3]} ({x[4]}) at {x[0]}, "
+                  f"cut data {y[2]} {y[3]} ({y[4]}) at {y[0]}: something before the cut reads data after it")
+            return 1
+    if len(full) != len(short):
+        print(f"! {len(full)} decisions before {a.at} with the full data, {len(short)} with the cut data")
+        return 1
+    print(f"same {len(full)} decisions before {a.at} with the data cut there: no look-ahead across the cut")
+    return 0
 
 
 def digest(path: pathlib.Path) -> str:
@@ -227,7 +248,14 @@ def cmd_repro(a) -> int:
         return 2
     runs = []
     for n in range(a.runs):
-        done = subprocess.run(a.command)
+        for f in a.out:  # each run must write its outputs itself; a file left from before proves nothing
+            if pathlib.Path(f).exists():
+                pathlib.Path(f).replace(f"{f}.repro-before")
+        try:
+            done = subprocess.run(a.command, timeout=a.timeout)
+        except subprocess.TimeoutExpired:
+            print(f"! run {n + 1} took longer than {a.timeout} s")
+            return 1
         if done.returncode:
             print(f"! run {n + 1} failed with exit code {done.returncode}")
             return 1
@@ -243,7 +271,17 @@ def cmd_repro(a) -> int:
             same = False
         else:
             print(f"same       {f}  sha256 {runs[0][i][:16]}")
+    for f in a.out:
+        before = pathlib.Path(f"{f}.repro-before")
+        if before.exists():
+            before.unlink()
     return 0 if same else 1
+
+
+def with_lab(sub, name: str):
+    s = sub.add_parser(name)
+    s.add_argument("--lab", type=pathlib.Path, default=pathlib.Path("."), help="the research folder (research/<slug>)")
+    return s
 
 
 def main(argv=None) -> int:
@@ -253,30 +291,48 @@ def main(argv=None) -> int:
         command, argv = argv[argv.index("--") + 1:], argv[:argv.index("--")]
     p = argparse.ArgumentParser(prog="lab.py", description=__doc__.splitlines()[0])
     sub = p.add_subparsers(dest="cmd", required=True)
+    for name in ("register", "judge"):
+        with_lab(sub, name).add_argument("id")
+    s = with_lab(sub, "run")
+    s.add_argument("id")
+    for flag in ("--code", "--config", "--data"):
+        s.add_argument(flag, action="append", default=[])
+    s.add_argument("--again", action="store_true")
+    with_lab(sub, "check")
+    s = with_lab(sub, "holdout")
+    s.add_argument("action", choices=("open", "close", "status"))
+    s.add_argument("id", nargs="?")
+    s.add_argument("--metrics")
+    s.add_argument("--budget", type=int)
+    s.add_argument("--by", default="rl-hypothesis-reviewer")
+    s = with_lab(sub, "brief")
+    s.add_argument("file")
     s = sub.add_parser("env")
     s.add_argument("file")
+    s.add_argument("--stage", choices=("sim", "verify", "all"), default="all")
     s = sub.add_parser("trace")
     s.add_argument("file")
     s.add_argument("--expect")
+    s.add_argument("--min-delay", type=float)
+    s = sub.add_parser("truncate")
+    s.add_argument("full")
+    s.add_argument("cut")
+    s.add_argument("--at", required=True)
     s = sub.add_parser("sample")
     s.add_argument("file")
     s.add_argument("--n", type=int, default=3)
     s.add_argument("--metric", default="outcome")
     s.add_argument("--seed", type=int, default=0)
-    s = sub.add_parser("holdout")
-    s.add_argument("file")
-    s.add_argument("action", choices=("log", "status"))
-    s.add_argument("--candidate", default="")
-    s.add_argument("--result")
-    s.add_argument("--by", default="rl-hypothesis-reviewer")
-    s.add_argument("--budget", type=int, default=1)
     s = sub.add_parser("repro")
     s.add_argument("--out", action="append", default=[])
     s.add_argument("--runs", type=int, default=2)
+    s.add_argument("--timeout", type=float)
     a = p.parse_args(argv)
     a.command = command
-    return {"env": cmd_env, "trace": cmd_trace, "sample": cmd_sample,
-            "holdout": cmd_holdout, "repro": cmd_repro}[a.cmd](a)
+    return {"register": protocol.cmd_register, "run": protocol.cmd_run, "judge": protocol.cmd_judge,
+            "check": protocol.cmd_check, "holdout": protocol.cmd_holdout, "brief": protocol.cmd_brief,
+            "env": cmd_env, "trace": cmd_trace, "truncate": cmd_truncate, "sample": cmd_sample,
+            "repro": cmd_repro}[a.cmd](a)
 
 
 if __name__ == "__main__":

@@ -11,6 +11,7 @@ import unittest
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 LAB = ROOT / "skills" / "research" / "scripts" / "lab.py"
+TOY = ROOT / "tests" / "fixtures" / "research" / "toy_sim.py"
 
 
 class LabCase(unittest.TestCase):
@@ -41,6 +42,9 @@ class Env(LabCase):
         self.assertIn("S1", out)
         self.assertIn("V5", out)
         self.assertIn("0 of 12 requirements proven", out)
+        out = self.lab("env", str(self.dir / "ENVIRONMENT.md"), "--stage", "sim", expect=1)
+        self.assertIn("0 of 7 requirements proven", out)
+        self.assertNotIn("V1", out)
 
     def test_done_needs_evidence_and_na_needs_a_reason(self):
         table = ("| # | Requirement | Status | Evidence |\n|---|---|---|---|\n"
@@ -76,6 +80,15 @@ class Trace(LabCase):
         out = self.lab("trace", self.write("trace.tsv", bad), expect=1)
         self.assertIn("look-ahead: inputs newer than the decision on 1 rows (first: line 6)", out)
         self.assertIn("time goes back within a stream on 1 rows (first: line 7)", out)
+
+    def test_self_reported_or_missing_inputs_ts_is_no_evidence(self):
+        self.assertIn("inputs_ts equals ts on every row", self.lab("trace", self.write("t.tsv",
+                      "ts\tstage\taction\tinputs\tinputs_ts\n1\tsignal\tlong\tx\t1\n")))
+        self.assertIn("no inputs_ts column", self.lab("trace", self.write("t2.tsv", "ts\tstage\taction\n1\tsignal\tlong\n")))
+        out = self.lab("trace", str(self.dir / "t2.tsv"), "--min-delay", "1", expect=1)
+        self.assertIn("ERROR no inputs_ts column", out)
+        out = self.lab("trace", str(self.dir / "t.tsv"), "--min-delay", "0.5", expect=1)
+        self.assertIn("less than 0.5 s before the decision", out)
 
     def test_missing_columns_and_blind_decisions(self):
         out = self.lab("trace", self.write("t.tsv", "ts\tstage\n1\tsignal\n"), expect=1)
@@ -117,20 +130,6 @@ class Sample(LabCase):
         self.assertEqual(whys.count("rare"), 1)
 
 
-class Holdout(LabCase):
-    def test_second_look_spoils_the_candidate(self):
-        ledger = str(self.dir / "KB" / "HOLDOUT.tsv")
-        out = self.lab("holdout", ledger, "log", "--candidate", "E12@abc123", "--result", "net +0.8 bp/trade\tPASS")
-        self.assertIn("E12@abc123\t1 look(s)\tlast: net +0.8 bp/trade PASS\tok", out)
-        out = self.lab("holdout", ledger, "log", "--candidate", "E12@abc123", "--result", "FAIL", expect=1)
-        self.assertIn("SPOILED", out)
-        self.assertIn("ok", self.lab("holdout", ledger, "status", "--budget", "2"))
-        self.assertEqual(len((self.dir / "KB" / "HOLDOUT.tsv").read_text().splitlines()), 3)
-
-    def test_empty_ledger(self):
-        self.assertIn("no looks", self.lab("holdout", str(self.dir / "H.tsv"), "status"))
-
-
 class Repro(LabCase):
     def test_same_and_different_outputs(self):
         same = self.write("same.py", "open('out.tsv', 'w').write('a\\t1\\n')\n")
@@ -139,9 +138,131 @@ class Repro(LabCase):
         noisy = self.write("noisy.py", "import random\nopen('out.tsv', 'w').write(str(random.random()))\n")
         self.assertIn("DIFFERENT  out.tsv", self.lab("repro", "--out", "out.tsv", "--", sys.executable, noisy, expect=1))
 
+    def test_a_file_left_from_before_is_not_a_reproduction(self):
+        self.write("out.tsv", "old\n")
+        skip = self.write("skip.py", "import os\nif not os.path.exists('out.tsv'):\n    pass\n")
+        self.assertIn("not written", self.lab("repro", "--out", "out.tsv", "--", sys.executable, skip, expect=1))
+        self.assertFalse((self.dir / "out.tsv.repro-before").exists())
+
     def test_failing_command_and_missing_output(self):
         self.assertIn("failed", self.lab("repro", "--out", "x", "--", sys.executable, "-c", "raise SystemExit(3)", expect=1))
         self.assertIn("not written", self.lab("repro", "--out", "nothing.tsv", "--", sys.executable, "-c", "pass", expect=1))
+
+
+class Protocol(LabCase):
+    """register -> run -> judge -> check, and the holdout, through the ledger."""
+
+    def setUp(self):
+        super().setUp()
+        self.labdir = self.dir / "research" / "toy"
+        self.row("E1", "net_per_trade > 0 & trades >= 30")
+        self.write("research/toy/KB/expect/E1.md", "| Stage | Should do |\n|---|---|\n| signal | long on both up |\n")
+
+    def row(self, id, criterion, decision="", result=""):
+        path = self.labdir / "KB" / "EXPERIMENTS.tsv"
+        head = (ROOT / "skills" / "research" / "EXPERIMENTS-TEMPLATE.tsv").read_text()
+        rows = path.read_text() if path.exists() else head
+        line = "\t".join([id, "1", "H1.1", "toy", "+0.1 per trade", criterion, "abc", "seed7", "7", result, decision, "", ""])
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(rows + line + "\n")
+
+    def p(self, *args, expect=0):
+        return self.lab(args[0], "--lab", str(self.labdir), *args[1:], expect=expect)
+
+    def run_toy(self, id, *flags, again=False, expect=0):
+        out, extra = self.labdir / "results" / id, ["--again"] if again else []
+        return self.p("run", id, "--code", str(TOY), *extra, "--", sys.executable, str(TOY), str(out), *flags, expect=expect)
+
+    def test_register_needs_a_row_an_expectation_and_a_readable_criterion(self):
+        self.assertIn("no row E9", self.p("register", "E9", expect=1))
+        self.row("E2", "net looks good")
+        self.write("research/toy/KB/expect/E2.md", "x")
+        self.assertIn("cannot read 'net looks good'", self.p("register", "E2", expect=1))
+        self.row("E3", "net > 0")
+        self.assertIn("no KB/expect/E3.md", self.p("register", "E3", expect=1))
+        self.assertIn("registered E1", self.p("register", "E1"))
+        self.assertIn("registered already", self.p("register", "E1", expect=1))
+
+    def test_run_judge_and_check(self):
+        self.assertIn("not registered", self.run_toy("E1", expect=1))
+        self.p("register", "E1")
+        self.assertIn("E1: exit 0", self.run_toy("E1"))
+        self.assertTrue((self.labdir / "results" / "E1" / "DONE").exists())
+        self.assertEqual(json.loads((self.labdir / "results" / "E1" / "RUN.json").read_text())["exit"], 0)
+        out = self.p("judge", "E1")
+        self.assertIn("E1: PASS  (1 trial so far", out)
+        self.assertIn("net_per_trade 0.039 > 0 ok", out)
+        self.assertIn("has run already", self.run_toy("E1", expect=1))
+        self.run_toy("E1", "--honest", again=True)
+        self.assertIn("E1: FAIL  (2 trials", self.p("judge", "E1", expect=1))
+        self.assertIn("1 registered, 2 runs (trials), 1 PASS / 1 FAIL", self.p("check"))
+
+    def test_edits_after_registration_are_caught(self):
+        self.p("register", "E1")
+        self.write("research/toy/KB/expect/E1.md", "| Stage | Should do |\n|---|---|\n| signal | anything |\n")
+        self.assertIn("expect/E1.md changed after registration", self.p("check", expect=1))
+        self.assertIn("changed after registration", self.run_toy("E1", expect=1))
+        path = self.labdir / "KB" / "EXPERIMENTS.tsv"
+        path.write_text(path.read_text().replace("net_per_trade > 0", "net_per_trade > -1"))
+        self.assertIn("pass_criterion changed after registration", self.p("check", expect=1))
+
+    def test_keep_without_pass_and_changed_metrics_and_a_tampered_ledger(self):
+        self.p("register", "E1")
+        self.run_toy("E1", "--honest")
+        metrics = self.labdir / "results" / "E1" / "metrics.tsv"
+        metrics.write_text(metrics.read_text().replace("-0.245", "0.245"))
+        self.assertIn("missing or changed after the run", self.p("judge", "E1", expect=1))
+        self.row("E1", "net_per_trade > 0 & trades >= 30", decision="KEEP BEST")
+        self.assertIn("without a PASS from lab.py judge", self.p("check", expect=1))
+        ledger = self.labdir / "LEDGER.jsonl"
+        lines = ledger.read_text().splitlines()
+        ledger.write_text("\n".join([lines[0].replace("abc", "xyz")] + lines[1:]) + "\n")
+        self.assertIn("ledger line 2 (run_start E1) does not follow line 1", self.p("check", expect=1))
+
+    def test_a_crash_is_judged_crash(self):
+        self.p("register", "E1")
+        self.p("run", "E1", "--", sys.executable, "-c", "raise SystemExit(3)", expect=3)
+        self.assertIn("CRASH", self.p("judge", "E1", expect=1))
+
+    def test_holdout_needs_a_pass_has_one_budget_and_is_spent_by_a_failure(self):
+        self.p("register", "E1")
+        self.run_toy("E1")
+        self.assertIn("not judged PASS", self.p("holdout", "open", "E1", expect=1))
+        self.p("judge", "E1")
+        self.assertIn("look 1 of 2 is open", self.p("holdout", "open", "E1", "--budget", "2"))
+        self.assertIn("still open", self.p("holdout", "open", "E1", expect=1))
+        holdout = self.dir / "holdout"
+        self.lab("repro", "--out", str(holdout / "metrics.tsv"), "--runs", "1", "--",
+                 sys.executable, str(TOY), str(holdout), "--honest")
+        self.assertIn("E1 on the holdout: FAIL", self.p("holdout", "close", "E1", "--metrics", str(holdout / "metrics.tsv"), expect=1))
+        self.assertIn("the holdout is spent", self.p("holdout", "open", "E1", expect=1))
+        self.assertIn("fixed at 2", self.p("holdout", "open", "E1", "--budget", "5", expect=1))
+        self.assertIn("look 1: E1 FAIL", self.p("holdout", "status"))
+        self.assertIn("1 holdout look(s)", self.p("check"))
+
+    def test_the_brief_traces_every_number_to_the_record(self):
+        self.p("register", "E1")
+        self.run_toy("E1")
+        self.p("judge", "E1")
+        brief = self.write("research/toy/BRIEF.md", "E1 earned 0.039 per trade over 43 trades, 1.69 in all (3.9%).\n")
+        self.assertIn("3 of 3 numbers trace", self.p("brief", brief))
+        self.write("research/toy/BRIEF.md", "E1 earned 0.44 per trade.\n")
+        self.assertIn("line 1: 0.44 is in no metrics file", self.p("brief", brief, expect=1))
+
+
+class ToyResearch(LabCase):
+    """The planted look-ahead is caught by the truncation test, and only where it is."""
+
+    def runs(self, name, *flags):
+        subprocess.run([sys.executable, str(TOY), str(self.dir / name), *flags], check=True)
+        return str(self.dir / name / "trace.tsv")
+
+    def test_truncation_finds_the_look_ahead_and_passes_the_honest_version(self):
+        out = self.lab("truncate", self.runs("full"), self.runs("cut", "--bars", "200"), "--at", "2026-03-02T12:50:00", expect=1)
+        self.assertIn("decision 195 before 2026-03-02T12:50:00 differs", out)
+        out = self.lab("truncate", self.runs("honest", "--honest"), self.runs("hcut", "--honest", "--bars", "200"),
+                       "--at", "2026-03-02T12:50:00")
+        self.assertIn("same 195 decisions", out)
 
 
 if __name__ == "__main__":
