@@ -12,6 +12,7 @@ import unittest
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 LAB = ROOT / "skills" / "research" / "scripts" / "lab.py"
 TOY = ROOT / "tests" / "fixtures" / "research" / "toy_sim.py"
+SERIES = ROOT / "tests" / "fixtures" / "research" / "series_sim.py"
 
 
 class LabCase(unittest.TestCase):
@@ -236,9 +237,9 @@ class Protocol(LabCase):
 
     def test_keep_needs_a_pass_on_the_latest_run_and_the_reviewers_pass(self):
         self.passed()
-        self.row("E1", "net_per_trade > 0 & trades >= 30", decision="KEEP BEST")
+        self.row("E1", "net_per_trade > 0 & trades >= 30", decision="KEEP")
         self.assertIn("without the reviewer's PASS", self.p("check", expect=1))
-        self.row("E1", "net_per_trade > 0 & trades >= 30", decision="KEEP BEST", review="R01 PASS")
+        self.row("E1", "net_per_trade > 0 & trades >= 30", decision="KEEP", review="R01 PASS")
         self.assertIn("1 PASS", self.p("check"))
         self.run_toy("E1", "--honest", again=True)  # a new attempt that nobody judged
         self.assertIn("without a PASS from lab.py judge on its latest run", self.p("check", expect=1))
@@ -295,29 +296,89 @@ class Protocol(LabCase):
         self.assertEqual([e for e in (self.labdir / "LEDGER.jsonl").read_text().splitlines()].__len__(), 40)
         self.assertIn("0 registered", self.p("check"))
 
-    def test_holdout_is_bound_to_a_judged_candidate_and_spent_by_a_failure(self):
+    def series(self, id, mean, seed, again=False, expect=0):
+        out, extra = self.labdir / "results" / id, ["--again"] if again else []
+        return self.p("run", id, "--code", str(SERIES), *extra, "--", sys.executable, str(SERIES), str(out),
+                      str(mean), str(seed), expect=expect)
+
+    def make_best(self, id="E1", mean=0.5, seed=1, expect=0):
+        if id != "E1":
+            self.row(id, "net_per_trade > 0 & trades >= 30")
+            self.write(f"research/toy/KB/expect/{id}.md", "| Stage | Should do |\n|---|---|\n| day | earn |\n")
+        self.p("register", id)
+        self.series(id, mean, seed)
+        self.p("judge", id)
+        self.row(id, "net_per_trade > 0 & trades >= 30", review="R01 PASS")
+        self.p("stats", id)
+        return self.p("best", id, expect=expect)
+
+    def test_holdout_is_bound_to_the_best_candidate_and_spent_by_a_failure(self):
         self.p("register", "E1")
-        self.run_toy("E1")
+        self.series("E1", 0.5, 1)
         self.assertIn("not judged PASS", self.p("holdout", "open", "E1", expect=1))
         self.p("judge", "E1")
+        self.assertIn("not the current BEST", self.p("holdout", "open", "E1", expect=1))
+        self.row("E1", "net_per_trade > 0 & trades >= 30", review="R01 PASS")
+        self.p("stats", "E1")
+        self.p("best", "E1")
         self.assertIn("verification requirements are not proven", self.p("holdout", "open", "E1", expect=1))
         self.proven_verification()
         self.assertIn("1 to 3 looks", self.p("holdout", "open", "E1", "--budget", "1000", expect=1))
         self.assertIn("look 1 of 2 is open", self.p("holdout", "open", "E1", "--budget", "2"))
         self.assertIn("still open", self.p("holdout", "open", "E1", expect=1))
-        self.assertIn("looked at on the holdout", self.run_toy("E1", again=True, expect=1))
+        self.assertIn("looked at on the holdout", self.series("E1", 0.5, 1, again=True, expect=1))
         sim = str(self.labdir / "results" / "E1" / "metrics.tsv")
         self.assertIn("written by the holdout run", self.p("holdout", "close", "E1", "--metrics", sim, expect=1))
         copy = self.labdir / "sealed" / "copy.tsv"
         copy.parent.mkdir(parents=True, exist_ok=True)
         copy.write_bytes(pathlib.Path(sim).read_bytes())
         self.assertIn("output of a simulation run", self.p("holdout", "close", "E1", "--metrics", str(copy), expect=1))
-        metrics = self.holdout_metrics("--honest")
-        self.assertIn("E1 on the holdout: FAIL", self.p("holdout", "close", "E1", "--metrics", metrics, expect=1))
+        out = self.labdir / "sealed" / "E1"
+        subprocess.run([sys.executable, str(SERIES), str(out), "-0.5", "9"], check=True)
+        self.assertIn("E1 on the holdout: FAIL",
+                      self.p("holdout", "close", "E1", "--metrics", str(out / "metrics.tsv"), expect=1))
         self.assertIn("the holdout is spent", self.p("holdout", "open", "E1", expect=1))
         self.assertIn("fixed at 2", self.p("holdout", "open", "E1", "--budget", "3", expect=1))
         self.assertIn("look 1: E1 FAIL", self.p("holdout", "status"))
         self.assertIn("1 holdout look(s)", self.p("check"))
+
+    def test_stats_are_recorded_once_and_noise_is_not_a_discovery(self):
+        self.p("register", "E1")
+        self.series("E1", 0.0, 3)
+        out = self.p("stats", "E1", expect=1)
+        self.assertIn("not a discovery", out)
+        self.assertIn("trials so far 1", out)
+        self.assertEqual(out, self.p("stats", "E1", expect=1))
+        self.assertIn("not recomputed with other settings", self.p("stats", "E1", "--block", "20", expect=1))
+        self.assertIn("alpha 0.05, fixed", self.p("stats", "E1", "--alpha", "0.2", expect=1))
+        daily = self.labdir / "results" / "E1" / "daily.tsv"
+        daily.write_text(daily.read_text() + "d999\t50\n")
+        self.series("E1", 0.0, 3, again=True)
+        daily.write_text(daily.read_text() + "d999\t50\n")
+        self.assertIn("changed after the run", self.p("stats", "E1", expect=1))
+
+    def test_best_needs_pass_review_significance_and_to_beat_the_current_best(self):
+        self.p("register", "E1")
+        self.series("E1", 0.5, 1)
+        self.p("judge", "E1")
+        out = self.p("best", "E1", expect=1)
+        self.assertIn("the reviewer's PASS is not in its review cell", out)
+        self.assertIn("no `lab.py stats`", out)
+        self.row("E1", "net_per_trade > 0 & trades >= 30", review="R01 PASS")
+        out = self.p("stats", "E1")
+        self.assertIn("a discovery", out)
+        self.assertIn("E1 is BEST", self.p("best", "E1"))
+        self.assertIn("not compared with the current best E1", self.make_best("E2", 0.55, 2, expect=1))
+        self.assertIn("NOT BETTER", self.p("compare", "E2", "E1", expect=1))
+        self.assertIn("not better than E1 outside the interval", self.p("best", "E2", expect=1))
+        self.make_best("E3", 1.5, 4, expect=1)
+        self.assertIn("BETTER", self.p("compare", "E3", "E1"))
+        self.assertIn("E3 is BEST (was E1)", self.p("best", "E3"))
+        self.row("E1", "net_per_trade > 0 & trades >= 30", decision="KEEP BEST", review="R01 PASS")
+        self.assertIn("marked BEST but `lab.py best` recorded E3", self.p("check", expect=1))
+        out = self.p("fdr")
+        self.assertIn("E3\t1\t", out)
+        self.assertIn("3 tests", out)
 
     def test_the_brief_traces_every_number_to_the_record(self):
         self.passed()

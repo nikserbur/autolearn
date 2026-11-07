@@ -39,6 +39,10 @@ def latest_run(ledger: Ledger, id: str):
     return ledger.last("run_start", id)
 
 
+def current_best(ledger: Ledger):
+    return ledger.last("best")
+
+
 def judged_latest(ledger: Ledger, id: str) -> bool:
     """The last judgement is a PASS of the latest run, not of an earlier attempt."""
     j, run = ledger.last("judge", id), latest_run(ledger, id)
@@ -113,7 +117,7 @@ def cmd_run(a) -> int:
     (out / "code").mkdir(parents=True, exist_ok=True)
     for p in a.code:
         shutil.copy2(p, out / "code" / p.replace("/", "__"))
-    for name in ("metrics.tsv", "trace.tsv"):  # a stale file must not pass for this run's output
+    for name in ("metrics.tsv", "trace.tsv", "daily.tsv"):  # a stale file must not pass for this run's output
         if (out / name).exists():
             (out / name).replace(out / f"{name}.previous")
     if (out / "DONE").exists():
@@ -131,7 +135,8 @@ def cmd_run(a) -> int:
             log.write(f"lab.py: could not start the command: {e}\n")
             code = 127
     seconds = round(time.time() - start, 1)
-    ledger.append("run_end", id=a.id, exit=code, seconds=seconds, metrics_sha=sha256_file(out / "metrics.tsv"))
+    ledger.append("run_end", id=a.id, exit=code, seconds=seconds, metrics_sha=sha256_file(out / "metrics.tsv"),
+                  daily_sha=sha256_file(out / "daily.tsv"))
     info.update(end=datetime.datetime.now().isoformat(timespec="seconds"), exit=code, seconds=seconds)
     (out / "RUN.json").write_text(json.dumps(info, indent=1), encoding="utf-8")
     (out / "DONE").write_text(f"{code}\n", encoding="utf-8")
@@ -201,11 +206,19 @@ def cmd_check(a) -> int:
             errors.append(f"{id}: has a result but was never registered")
     warnings = [f"{e['id']}: started {e['ts']} (pid {e.get('pid')}), no end: running, or crashed" for e in unfinished(ledger)]
     if len(best) > 1:
-        warnings.append(f"more than one BEST: {', '.join(best)}")
+        errors.append(f"more than one row marked BEST: {', '.join(best)}")
+    recorded_best = current_best(ledger)
+    if best and (not recorded_best or best != [recorded_best["id"]]):
+        errors.append(f"row {best[0]} is marked BEST but `lab.py best` "
+                      + (f"recorded {recorded_best['id']}" if recorded_best else "recorded none"))
+    elif recorded_best and recorded_best["id"] in rows and not best:
+        warnings.append(f"{recorded_best['id']} is BEST in the ledger; mark its row BEST")
     judged = [e["verdict"] for e in ledger.find("judge")]
+    tests = ledger.find("stats")
     print(f"{len(registered)} registered, {len(ledger.find('run_start'))} runs (trials), "
           f"{judged.count('PASS')} PASS / {judged.count('FAIL')} FAIL / {judged.count('CRASH')} CRASH, "
-          f"{len(ledger.find('holdout_open'))} holdout look(s)")
+          f"{len(tests)} tested ({sum(e['discovery'] for e in tests)} discoveries), "
+          f"best {recorded_best['id'] if recorded_best else '-'}, {len(ledger.find('holdout_open'))} holdout look(s)")
     for w in warnings:
         print(f"WARN  {w}")
     for e in errors:
@@ -235,6 +248,9 @@ def cmd_holdout(a) -> int:
             return fail(f"a look budget of {budget}: 1 to {MAX_LOOKS} looks per research, or the holdout becomes a selection set")
         if not judged_latest(ledger, a.id):
             return fail(f"{a.id}: its latest run was not judged PASS in simulation; only such a candidate is looked at")
+        best = current_best(ledger)
+        if not best or best["id"] != a.id or best["run_seq"] != latest_run(ledger, a.id)["seq"]:
+            return fail(f"{a.id} is not the current BEST (`lab.py best`); only the best candidate is looked at")
         env = a.lab / "KB" / "ENVIRONMENT.md"
         rows = tables.requirements(env, "verify")
         open_ = tables.unproven(rows) if rows else [f"no V requirements in {env}"]
@@ -290,7 +306,8 @@ def known_numbers(lab: pathlib.Path, ledger: Ledger) -> list:
         values += read_metrics(path).values()
     for e in ledger.entries():
         values += [v for v in (e.get("metrics") or {}).values() if isinstance(v, (int, float))]
-        values += [e["trials"]] if "trials" in e else []
+        if e.get("kind") in ("stats", "compare", "judge"):
+            values += [v for v in e.values() if isinstance(v, (int, float)) and not isinstance(v, bool)]
     values += [len(ledger.find("run_start")), len(ledger.find("register")), len(ledger.find("holdout_open"))]
     for name in ("PROGRAM.md", "ENVIRONMENT.md"):  # stated costs, windows and limits; never the expectations
         path = lab / "KB" / name
