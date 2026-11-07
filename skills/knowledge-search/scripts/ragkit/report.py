@@ -27,8 +27,19 @@ def quoted(text: str) -> str:
     return "\n".join(f"| {line}" for line in split_lines(text.rstrip()))
 
 
+def _kind(parent: dict) -> str:
+    """What the section is, when the notes say: a measurement, an expectation, a conjecture... and whether it still holds."""
+    bits = [parent.get("kind") or ""]
+    if parent.get("status", "valid") != "valid":
+        bits.append(parent["status"].upper())
+    if parent.get("scope"):
+        bits.append(f"scope {parent['scope']}")
+    label = " · ".join(b for b in bits if b)
+    return f"<{label}>  " if label else ""
+
+
 def _tag(passage) -> str:
-    return f"[{passage.parent['head'] or '(top)'}]  score {passage.score:.2f} " \
+    return f"[{passage.parent['head'] or '(top)'}]  {_kind(passage.parent)}score {passage.score:.2f} " \
            f"(cos {passage.cos:.2f}, {passage.matched}/{passage.total} terms)"
 
 
@@ -120,6 +131,8 @@ def to_json(index: Index, result: Result, budget: int, backend: str) -> dict:
         "themes": result.themes, "clusters": result.clusters,
         "results": [{"path": rel_path(index, p.file), "start": p.parent["s"], "end": p.parent["e"],
                      "matched": [p.child["s"], p.child["e"]], "head": p.parent["head"], "score": round(p.score, 3),
+                     "kind": p.parent.get("kind", ""), "status": p.parent.get("status", "valid"),
+                     "scope": p.parent.get("scope", ""),
                      "cos": round(p.cos, 3), "coverage": round(p.cov, 3), "hop": p.hop,
                      "text": passage_text(p.file, p, budget)} for p in result.passages],
     }

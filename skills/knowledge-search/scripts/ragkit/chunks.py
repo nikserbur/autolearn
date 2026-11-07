@@ -164,6 +164,42 @@ def context_of(title: str, summary: str, head: str, lead: str, name: str) -> str
     return " · ".join(parts)[:CONTEXT_MAX]
 
 
+META_LINE = re.compile(r"^\s*(?:[-*]\s*)?(kind|status|scope|date|supersedes)\s*:", re.I)
+META_KEYS = ("kind", "status", "scope", "date", "supersedes")
+STATUSES = {"valid", "invalid", "superseded"}
+
+
+def meta_of(lines: list) -> dict:
+    """`kind: measurement · status: valid · scope: ES 2026-Q3 · date: 2026-11-07` on one line near the top
+    of a section or a document, items split by ' · ', ';' or ' | '."""
+    for line in lines:
+        if META_LINE.match(line):
+            found = {}
+            for part in re.split(r"\s+·\s+|;|\s\|\s", line.strip().lstrip("-* ")):
+                key, sep, value = part.partition(":")
+                key, value = key.strip().lower(), value.strip()
+                if sep and key in META_KEYS and value:
+                    found[key] = value.lower() if key in ("kind", "status") else value
+            if found.get("status") not in STATUSES:
+                found.pop("status", None)
+            return found
+    return {}
+
+
+def default_kind(path: pathlib.Path) -> str:
+    """What a research KB file holds by its place: reviews, collected sources, the journal, conclusions."""
+    parts = {p.lower() for p in path.parts}
+    if "reviews" in parts:
+        return "review"
+    if "sources" in parts:
+        return "source"
+    if path.suffix == ".tsv":
+        return "record"
+    if path.name == "KNOWLEDGE.md":
+        return "conclusion"
+    return ""
+
+
 def parse_file(path: pathlib.Path, text: str) -> dict:
     """Document structure for the store: title, summary, parents, each with its children and context."""
     lines = split_lines(text)
@@ -176,6 +212,7 @@ def parse_file(path: pathlib.Path, text: str) -> dict:
         offsets.append(pos)
         pos += len(line) + 1
     doc_tags = periods(f"{title} {path.stem}")
+    doc_meta = {"kind": default_kind(path), **meta_of(lines[:8])}
     parents = []
     for s, e, head, body in (chunk_tsv(lines) if is_tsv else chunk_md(lines)):
         kids = [(s - 1, e - 1, 0, len(lines[e - 1]), body)] if is_tsv else split_children(lines[s - 1:e], s - 1)
@@ -189,6 +226,13 @@ def parse_file(path: pathlib.Path, text: str) -> dict:
         for n, (a, b, ca, cb, kid) in enumerate(kids):
             children.append({"s": a + 1, "e": b + 1, "cs": offsets[a] + ca, "ce": offsets[b] + cb, "text": kid,
                              "ctx": context_of(title, summary, head, lead if n else "", name)})
+        meta = dict(doc_meta)
+        if is_tsv:
+            meta["status"] = "invalid" if re.search(r"\bINVALID\b", lines[s - 1]) else meta.get("status", "valid")
+        else:
+            meta.update(meta_of(lines[s:min(s + 3, e)]))
         parents.append({"s": s, "e": e, "head": head, "htok": tokens(head), "sha": digest("\n".join(lines[s - 1:e])),
-                        "ctok": tokens(f"{title} {path.stem} {folder} {name} {summary} {lead}"), "per": sorted(tags), "kids": children})
+                        "ctok": tokens(f"{title} {path.stem} {folder} {name} {summary} {lead}"), "per": sorted(tags),
+                        "kind": meta.get("kind", ""), "status": meta.get("status", "valid"), "scope": meta.get("scope", ""),
+                        "kids": children})
     return {"title": title, "summary": summary, "text": "\n".join(lines), "parents": parents}

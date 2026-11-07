@@ -401,6 +401,19 @@ class Protocol(LabCase):
         self.assertIn("E3\t1\t", out)
         self.assertIn("3 tests", out)
 
+    def test_conclusions_resting_on_an_invalid_run_must_say_so(self):
+        self.passed()
+        self.row("E1", "net_per_trade > 0 & trades >= 30", decision="INVALID")
+        knowledge = ("# Knowledge\n\n## What we know now\n- E1 (INVALID: look-ahead) proves nothing.\n\n"
+                     "## Momentum works\n- E1 earned 0.039 per trade.\n\n## Rejected\n- E1-style entries.\n")
+        self.write("research/toy/KB/KNOWLEDGE.md", knowledge)
+        out = self.p("check", expect=1)
+        self.assertIn("'Momentum works' rests on E1, which is INVALID", out)
+        self.assertNotIn("What we know now", out)
+        self.write("research/toy/KB/KNOWLEDGE.md", knowledge.replace(
+            "## Momentum works\n", "## Momentum works\nkind: conclusion · status: invalid\n"))
+        self.assertNotIn("rests on", self.p("check"))
+
     def test_the_brief_traces_every_number_to_the_record(self):
         self.passed()
         brief = self.write("research/toy/BRIEF.md", "On 2026-11-07, E1 earned 0.039 per trade over 43 trades, "

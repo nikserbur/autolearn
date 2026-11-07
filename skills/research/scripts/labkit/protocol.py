@@ -189,6 +189,26 @@ def unfinished(ledger: Ledger) -> list:
     return out
 
 
+def still_valid(lab: pathlib.Path, invalid: list) -> list:
+    """KNOWLEDGE.md sections that cite an INVALID experiment and do not say they are invalid or superseded."""
+    path = lab / "KB" / "KNOWLEDGE.md"
+    if not invalid or not path.exists():
+        return []
+    out = []
+    for section in re.split(r"(?m)^(?=## )", path.read_text(encoding="utf-8")):
+        head = section.splitlines()[0] if section.strip() else ""
+        if re.search(r"(?mi)^\s*(?:[-*]\s*)?(?:kind|status)\s*:.*\bstatus\s*:\s*(invalid|superseded)\b", section) \
+                or re.search(r"(?mi)^\s*status\s*:\s*(invalid|superseded)\b", section):
+            continue
+        lines = section.splitlines()
+        cited = [id for id in invalid if any(re.search(rf"(?<![\w.-]){re.escape(id)}(?![\w-])", line)
+                                             and not re.search(r"invalid|superseded|retracted", line, re.I) for line in lines)]
+        if cited and head.startswith("## ") and not head.lower().startswith(("## rejected", "## discrepancies")):
+            out.append(f"KNOWLEDGE.md section '{head[3:].strip()}' rests on {', '.join(cited)}, which is INVALID: "
+                       "mark it `status: invalid` with the reason, or `status: superseded` and point to what replaced it")
+    return out
+
+
 def cmd_check(a) -> int:
     from .selection import reviewed
     ledger = Ledger(a.lab)
@@ -209,6 +229,7 @@ def cmd_check(a) -> int:
         if id not in registered and row.get("result", "").strip():
             errors.append(f"{id}: has a result but was never registered")
     warnings = [f"{e['id']}: started {e['ts']} (pid {e.get('pid')}), no end: running, or crashed" for e in unfinished(ledger)]
+    errors += still_valid(a.lab, [id for id, row in rows.items() if "INVALID" in row.get("decision", "").upper()])
     if len(best) > 1:
         errors.append(f"more than one row marked BEST: {', '.join(best)}")
     recorded_best = current_best(ledger)

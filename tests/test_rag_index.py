@@ -208,10 +208,10 @@ class ChangeDataCapture(RagCase):
         (res / "KNOWLEDGE.md").write_text("# Knowledge\n\n## Fills\n\nBack of queue fills are toxic.\n")
         self.run_engine("index", "--root", str(res))
         (res / "KNOWLEDGE.md").write_text("# Knowledge\n\n## Fills\n\nFront of queue fills are harmless.\n")
-        out = self.run_engine("search", "--no-log", "harmless", "fills")
+        out = self.run_engine("search", "--no-log", "--everywhere", "harmless", "fills")
         self.assertIn("Front of queue fills are harmless", out)
         self.assertNotIn("toxic", out)
-        self.assertIn("No chunk matches", self.run_engine("search", "--no-log", "toxic"))
+        self.assertIn("No chunk matches", self.run_engine("search", "--no-log", "--everywhere", "toxic"))
 
     def test_sibling_root_is_not_taken_for_a_prefix_match(self):
         one, two = self.dir / "a" / "KB", self.dir / "a" / "KB2"
@@ -233,7 +233,7 @@ class ChangeDataCapture(RagCase):
         meta = self.meta()
         meta["backend"] = "hash-1"
         meta_path.write_text(json.dumps(meta), encoding="utf-8")
-        self.assertIn("n.md", self.run_engine("search", "--no-log", "quokka"))
+        self.assertIn("n.md", self.run_engine("search", "--no-log", "--everywhere", "quokka"))
         self.assertEqual(self.meta()["backend"], "hash-512")
 
     def test_store_from_the_previous_version_upgrades_and_keeps_research_roots(self):
@@ -246,7 +246,7 @@ class ChangeDataCapture(RagCase):
             str((res / "n.md").resolve()): {"mtime": 1.0, "chunks": [
                 {"s": 3, "e": 5, "head": "N > S", "tok": ["quokk"], "htok": ["n"], "row": 0}]}}}))
         (rag / "vectors.f32").write_bytes(b"\0" * 4 * 512)
-        out = self.run_engine("search", "--no-log", "quokka")
+        out = self.run_engine("search", "--no-log", "--everywhere", "quokka")
         self.assertIn("n.md", out)
         self.assertEqual(self.meta()["schema"], store_mod.SCHEMA)
         self.assertTrue(any("project" in r for r in self.meta()["roots"]))

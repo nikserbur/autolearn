@@ -156,6 +156,10 @@ class Store:
                 with contextlib.suppress(OSError):
                     self.lock_path.unlink()
 
+    def busy(self) -> bool:
+        """Another live process holds the index lock: a new indexer should leave a note, not load a model."""
+        return self.lock_path.exists() and not self._lock_is_stale()
+
     def _heartbeat(self) -> None:
         with contextlib.suppress(OSError):
             os.utime(self.lock_path)
@@ -271,7 +275,7 @@ class Store:
             by_sha.setdefault(c.get("sha"), c)
         parents, chunks, todo = [], [], []
         for n, parent in enumerate(doc["parents"]):
-            parents.append({k: parent[k] for k in ("s", "e", "head", "htok", "sha", "ctok", "per")})
+            parents.append({k: parent[k] for k in ("s", "e", "head", "htok", "sha", "ctok", "per", "kind", "status", "scope")})
             for kid in parent["kids"]:
                 sha = digest(kid["text"])
                 old = by_sha.get(sha)

@@ -183,7 +183,9 @@ def fresh_index(store: Store, a: argparse.Namespace, emb, degraded: bool) -> Ind
         except Exception as e:  # a failing model must not take the last good snapshot down with it
             store.load()
             print(f"! could not refresh the store ({e}); searching the last snapshot", file=sys.stderr)
-    return Index(store, a.kb, has_vectors=not degraded and store.meta.get("backend") == emb.id)
+    scope = None if a.everywhere else [a.kb, *a.root]
+    return Index(store, a.kb, has_vectors=not degraded and store.meta.get("backend") == emb.id, scope=scope,
+                 retired=a.with_retired)
 
 
 def cmd_search(store: Store, a: argparse.Namespace, emb, degraded: bool) -> int:
@@ -204,6 +206,8 @@ def cmd_search(store: Store, a: argparse.Namespace, emb, degraded: bool) -> int:
     top = "-"
     if result.passages and result.verdict != "INCORRECT":
         top = f"{rel_path(index, result.passages[0].file)}:{result.passages[0].parent['s']}"
+    if index.hidden and not a.json:
+        print(f"({index.hidden} chunks marked invalid or superseded were left out; --with-retired lets them answer)")
     log_search(a, query, top, LOG_OUTCOME[result.verdict])
     return 0
 
@@ -292,6 +296,10 @@ def main() -> int:
     ap.add_argument("--kb", type=pathlib.Path, default=kb_dir())
     ap.add_argument("--root", type=pathlib.Path, action="append", default=[],
                     help="extra folder to index and search, e.g. a research KB (repeatable)")
+    ap.add_argument("--everywhere", action="store_true",
+                    help="search every indexed folder, every research KB included (default: the knowledge base and --root)")
+    ap.add_argument("--with-retired", action="store_true",
+                    help="let sections marked invalid or superseded answer too")
     ap.add_argument("--k", type=int, default=0, help="sections to return (default: chosen by the route)")
     ap.add_argument("--budget", type=int, default=BUDGET)
     ap.add_argument("--mode", choices=["auto", "exact", "local", "graph", "global"], default="auto",
@@ -314,6 +322,10 @@ def main() -> int:
     store = Store(a.kb)
     if a.cmd == "status":
         return cmd_status(store)
+    if a.cmd == "index" and store.busy():  # leave a note before loading a model that would only wait
+        store.mark_dirty(roots_of_args(a))
+        print("Another index is running; it will pick this change up.")
+        return 0
     emb = embedder(download=a.cmd not in ("search", "verify", "graph"))
     degraded = is_degraded(store, emb)
     handlers = {"index": cmd_index, "search": cmd_search, "verify": cmd_verify, "graph": cmd_graph,

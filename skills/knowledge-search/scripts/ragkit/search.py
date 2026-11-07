@@ -49,6 +49,7 @@ CLOSE_OK, CLOSE_WEAK = 0.42, 0.2
 UNKNOWN_SHARE = 0.5  # terms the base never saw hold this much of the query: it probably is not in the base
 FOREIGN_K = 8  # across alphabets only vectors rank, and less precisely, so show more
 OK_COVERAGE, WEAK_COVERAGE = 0.7, 0.45
+WEAK_KINDS = {"expectation", "conjecture", "snippet"}  # never graded CORRECT on their own
 CORRECT, AMBIGUOUS, INCORRECT = "CORRECT", "AMBIGUOUS", "INCORRECT"
 ORDER = {INCORRECT: 0, AMBIGUOUS: 1, CORRECT: 2}
 LOG_OUTCOME = {CORRECT: "hit", AMBIGUOUS: "partial", INCORRECT: "miss"}
@@ -117,9 +118,22 @@ class Result:
 class Index:
     """Search view of the store: (file, child, parent) per chunk, document frequencies, the graph on demand."""
 
-    def __init__(self, store, kb: pathlib.Path, has_vectors: bool = True):
+    def __init__(self, store, kb: pathlib.Path, has_vectors: bool = True, scope: list = None, retired: bool = True):
+        """`scope`: the folders whose files may answer (None: every indexed folder). `retired`: whether sections
+        marked invalid or superseded may answer."""
         self.store, self.kb, self.has_vectors = store, kb, has_vectors
-        self.items = [(f, c, e["parents"][c["p"]]) for f, e in store.meta["files"].items() for c in e["chunks"]]
+        prefixes = None if scope is None else tuple(str(pathlib.Path(r).resolve()) + os.sep for r in scope)
+        self.hidden = 0
+        self.items = []
+        for f, e in store.meta["files"].items():
+            if prefixes is not None and not f.startswith(prefixes):
+                continue
+            for c in e["chunks"]:
+                parent = e["parents"][c["p"]]
+                if not retired and parent.get("status", "valid") != "valid":
+                    self.hidden += 1
+                    continue
+                self.items.append((f, c, parent))
         self.n = len(self.items)
         self.avg = sum(len(c["tok"]) for _, c, _ in self.items) / self.n if self.n else 1.0
         self.df = Counter()
@@ -468,6 +482,8 @@ def grade(index: Index, query: Query, top: Passage) -> tuple:
         level = min(level, OK_COVERAGE - 0.01)
     elif misses_key_term(index, query, top.near):
         level = min(level, OK_COVERAGE - 0.01)
+    if top.parent.get("kind") in WEAK_KINDS or top.parent.get("status", "valid") != "valid":
+        level = min(level, OK_COVERAGE - 0.01)  # a prediction or a guess can point the way, never settle a question
     if level >= OK_COVERAGE:
         return CORRECT, round(level, 2)
     return (AMBIGUOUS if level >= WEAK_COVERAGE else INCORRECT), round(level, 2)

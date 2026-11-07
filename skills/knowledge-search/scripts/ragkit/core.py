@@ -8,7 +8,7 @@ import re
 
 from .lang import FOLD, MONTHS, QUARTER_ORDINALS, QUARTER_PATTERNS, STOP, UPPER
 
-SCHEMA = 3  # bump when the store layout or tokenisation changes: stores rebuild themselves
+SCHEMA = 4  # bump when the store layout or tokenisation changes: stores rebuild themselves
 BUDGET = 8000
 PARENT_MAX = 1800  # a parent is what the reader gets: a heading section, long ones cut at paragraphs
 CHILD_MAX = 480  # a child is what gets searched: about the 128-token window of MiniLM models
@@ -17,7 +17,7 @@ CONTEXT_MAX = 220
 EMBED_CHARS = 2000
 HASH_DIM = 512
 STEM = 5  # stem length: 5 measured best on mixed Russian / English notes (6 splits endings)
-SKIP_DIRS = {".git", ".rag", "__pycache__"}
+SKIP_DIRS = {".git", ".rag", "__pycache__", "expect"}  # expect/: predictions, read directly, never evidence
 SUFFIXES = (".md", ".tsv", ".txt")
 MAX_FILE_BYTES = 2_000_000  # a dump this size would cost every later search far more than it could ever give back
 # Identifiers that must stay one term: pg-orders-3, INC-2291, v0.3.0, orders.created, kb_rag.py. Without this a query

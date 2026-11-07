@@ -5,17 +5,38 @@
     kb_lint.py --kb DIR
 
 Errors (exit 1): broken `read first` pointers, pages no topic block points to (unroutable),
-topic blocks without `keywords:`. Warnings: size budgets from the knowledge-ingest skill.
+topic blocks without `keywords:`. Warnings: size budgets from the knowledge-ingest skill, and facts
+with numbers read from a source more than a year ago (`read YYYY-MM-DD` in the source note), which
+SOURCES.md asks to recheck before a decision rests on them.
 """
 from __future__ import annotations
 
 import argparse
+import datetime
 import os
 import pathlib
 import re
 import sys
 
 BUDGETS = {"block_lines": 8, "map_bytes": 25_000, "topic_bytes": 40_000, "project_bytes": 15_000}
+STALE_DAYS = 365
+READ_ON = re.compile(r"\bread (\d{4}-\d{2}-\d{2})")
+
+
+def stale_facts(page: pathlib.Path, today: datetime.date) -> list:
+    """Lines whose numbers come from a source read more than STALE_DAYS ago."""
+    out = []
+    for n, line in enumerate(page.read_text(encoding="utf-8").splitlines(), 1):
+        m = READ_ON.search(line)
+        if not m or not re.search(r"\d", line[:m.start()].split("(src:")[0]):
+            continue
+        try:
+            age = (today - datetime.date.fromisoformat(m.group(1))).days
+        except ValueError:
+            continue
+        if age > STALE_DAYS:
+            out.append(f"{page.parent.name}/{page.name}:{n}: a number read {age} days ago; recheck it before relying on it")
+    return out
 
 
 def kb_dir() -> pathlib.Path:
@@ -73,6 +94,7 @@ def lint(kb: pathlib.Path) -> tuple:
                 warnings.append(f"{sub}/{page.name}: {size // 1000} KB > {budget // 1000} KB, split it")
             if page.resolve() not in referenced:
                 errors.append(f"{sub}/{page.name}: no topic block points here (unroutable page)")
+            warnings += stale_facts(page, datetime.date.today())
     return errors, warnings, pages
 
 

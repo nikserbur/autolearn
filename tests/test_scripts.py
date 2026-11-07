@@ -92,6 +92,10 @@ class KbRag(ScriptCase):
         (res / "KNOWLEDGE.md").write_text("# Knowledge\n\n## Fill model\n- Back of queue fills are toxic.\n")
         self.run_script("knowledge-search/scripts/kb_rag.py", "index", "--root", str(res))
         out = self.run_script("knowledge-search/scripts/kb_rag.py", "search", "--no-log", "toxic", "fills")
+        self.assertNotIn("KNOWLEDGE.md", out)  # a research KB stays out of the background search
+        out = self.run_script("knowledge-search/scripts/kb_rag.py", "search", "--no-log", "--root", str(res), "toxic", "fills")
+        self.assertIn("KNOWLEDGE.md:3-4", out)
+        out = self.run_script("knowledge-search/scripts/kb_rag.py", "search", "--no-log", "--everywhere", "toxic", "fills")
         self.assertIn("KNOWLEDGE.md:3-4", out)
         self.assertIn("backend hash-512", self.run_script("knowledge-search/scripts/kb_rag.py", "status"))
 
@@ -138,6 +142,17 @@ class KbLint(ScriptCase):
         shutil.rmtree(self.kb)
         shutil.copytree(ROOT / "templates" / "knowledge", self.kb)
         self.assertIn("0 errors", self.run_script("knowledge-ingest/scripts/kb_lint.py"))
+
+    def test_old_numbers_are_flagged_for_a_recheck(self):
+        page = self.kb / "topics" / "release-process.md"
+        lines = page.read_text().splitlines() + [
+            "", "## Fees", "- Exchange fee is 0.35 per lot (src: https://x.example/fees, read 2020-01-02 ✅)",
+            "- Releases go out on Tuesdays (src: CONTRIBUTING.md, read 2020-01-02 ✅)",
+            "- Spread is 0.25 (src: https://x.example/spread, read 2099-01-01 ✅)"]
+        page.write_text("\n".join(lines) + "\n")
+        out = self.run_script("knowledge-ingest/scripts/kb_lint.py")
+        self.assertIn(f"release-process.md:{len(lines) - 2}: a number read", out)
+        self.assertEqual(out.count("a number read"), 1)
 
     def test_unroutable_page_and_broken_pointer_fail(self):
         (self.kb / "topics" / "orphan.md").write_text("# Orphan\n")
