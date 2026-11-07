@@ -1,7 +1,7 @@
 ---
 name: knowledge-ingest
 description: >
-  Builds the local knowledge base for retrieval (RAG) together with its curated router. Use when the user says "remember this", "add to the knowledge base", "build a page for this repo", after reading docs, wiki pages, code or tickets that will matter again, after a research round whose conclusions matter beyond its project, when knowledge-search reported a miss, or when docs-scout returned "New for the topic map". Distills sources into chunk-friendly topic and project pages with a source on every fact, registers them in the topic map with keywords and section pointers, embeds the new chunks into the vector store, keeps every file inside its size budget, and commits.
+  Builds the local knowledge base for retrieval (RAG) together with its curated router. Use when the user says "remember this", "add to the knowledge base", "build a page for this repo", after reading docs, wiki pages, code or tickets that will matter again, after a research round whose conclusions matter beyond its project, or when knowledge-search reported a miss. Distills sources into chunk-friendly topic and project pages with a source on every fact, registers them in the topic map with keywords and section pointers, embeds the new chunks into the vector store, keeps every file inside its size budget, and commits.
 argument-hint: "[repo | <url or path> | <topic>]"
 ---
 
@@ -23,6 +23,7 @@ Argument: `$ARGUMENTS`
 - Large source, many pages, or a whole repo: delegate to a subagent (`Explore`) with the question
   "what will someone need to know again?" and take back facts with citations. Do not pull the whole thing into the main context.
 - Pages the map marks ⛔: do not crawl them; record the link only.
+- Web sources, dates, cross-checks and what wins a disagreement: [SOURCES.md](SOURCES.md).
 
 ## 2. Distill into the page
 Topic page `KB/topics/<slug>.md`, sections in this order (skip empty ones):

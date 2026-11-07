@@ -6,6 +6,10 @@ description: >
 
 # knowledge-search - retrieve the right 8 KB, not the whole library
 
+This is the background mode of research-lab: it answers from what is already known, in any
+session, while hooks keep the index current. The direct mode, `/research`, produces new knowledge
+with subagents and writes it into research KBs that this search covers too.
+
 The knowledge base lives in `~/.claude/research-lab/knowledge/` (below: KB):
 
 ```
@@ -70,8 +74,8 @@ the user's explicit request).
    numbers with their units, ids, names, negation and citations in the notes' own words. It misses meaning a
    sentence implies, and across languages or in a paraphrase it can raise a false alarm: read the evidence it names.
 7. **Miss or partial hit** -> fall back to the repo's own docs, then connected doc/tracker MCP
-   tools, then the web. Then hand the findings to `knowledge-ingest` (offer it in one line) so the next
-   identical question is a hit.
+   tools, then the web, by the rules in [SOURCES.md](../knowledge-ingest/SOURCES.md). Then hand
+   the findings to `knowledge-ingest` (offer it in one line) so the next identical question is a hit.
 8. **Log** (only if you retrieved by hand) one line: `printf '%s	%s	%s	%s
 ' "$(date +%F)" "<query>" "<path:line or ->" "hit|partial|miss" >> KB/.router-log.tsv`.
    Repeated misses on the same words point to a missing topic: offer knowledge-ingest for it.

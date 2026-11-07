@@ -9,6 +9,9 @@ experiment or one question per section.
 - Failed and why: <...>
 - Suggests next: <...>
 
+## Discrepancies: expected against actual
+- <id> <stage>: expected <...>, actual <...> (results/<id>/trace.tsv rows, reviews/R<NN>) -> <H id>
+
 ## Rejected
 - <direction>: "<user quote>" (<date>). Not to be revived.
 
