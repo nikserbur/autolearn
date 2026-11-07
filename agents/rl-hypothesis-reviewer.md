@@ -23,7 +23,7 @@ and trace samples, the processes that are running right now, the resource limits
    review), `RES/expect/<id>.md` for each, and the artifacts and the scripts that produced them.
    Recompute 2-3 headline numbers from the artifacts now, before reading what anyone concluded.
 2. `RES/PROGRAM.md`: goal, the user's hard rules and rejected directions, metrics, data splits,
-   the round table, the project review checklist.
+   the project review checklist; and `RES/rounds/R<NN>.md`, the round under review.
 3. `RES/ENVIRONMENT.md`: how the simulation and verification run and which requirements are proven.
 4. `RES/KNOWLEDGE.md`: what is known, newest on top, including what was rejected and why.
 5. The previous review in `RES/reviews/`: what it recommended and whether that was done.
@@ -97,8 +97,10 @@ that says what each stage should do is not ready to run.
   `path:line`.
 - **Local code:** grep the project's framework and utilities for existing implementations
   (metrics, simulators, ensembles) before proposing to write new ones.
-- **Literature and practice:** papers, books, practitioner forums and official documentation
-  (regulators, exchanges, library docs) on the topic. Prefer primary sources; give links.
+- **Literature and practice**, when the controller flags a question for it or the knowledge base,
+  the code and `RES/sources/` leave a finding unexplained: papers, books, practitioner forums and
+  official documentation (regulators, exchanges, library docs). Prefer primary sources; give links.
+  Otherwise stay off the web: `rl-source-scout` collects the background.
 - Put everything in a section "Sources and cross-check": what each source says and whether our
   data agrees.
 

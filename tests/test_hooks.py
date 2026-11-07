@@ -118,6 +118,16 @@ class SessionBrief(HookCase):
         out = self.run_hook("session_brief.py", {"cwd": str(self.repo)})
         self.assertNotIn("No knowledge page", json.dumps(out))
 
+    def test_names_active_research_with_what_waits(self):
+        lab = self.repo / "research" / "mm"
+        lab.mkdir(parents=True)
+        entries = [{"kind": "run_start", "id": "E1", "seq": 1}, {"kind": "run_end", "id": "E1", "seq": 2},
+                   {"kind": "judge", "id": "E1", "seq": 3, "run_seq": 1}, {"kind": "run_start", "id": "E2", "seq": 4},
+                   {"kind": "best", "id": "E1", "seq": 5}]
+        (lab / "LEDGER.jsonl").write_text("\n".join(json.dumps(e) for e in entries) + "\nnot json\n")
+        ctx = self.run_hook("session_brief.py", {"cwd": str(self.repo)})["hookSpecificOutput"]["additionalContext"]
+        self.assertIn("Research mm: 2 runs, 1 unfinished (E2), 1 awaiting review, best E1 - research/mm/STATUS.md", ctx)
+
     def test_offers_embedding_model_when_store_uses_hashing(self):
         rag = self.home / "knowledge" / ".rag"
         rag.mkdir(parents=True)

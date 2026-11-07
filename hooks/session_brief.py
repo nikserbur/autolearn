@@ -10,6 +10,7 @@ With --seed (plugin mode), a missing data directory is created from the template
 the plugin works without install.sh. Typical output (< 400 chars):
 
   Knowledge base: 14 topics in knowledge/topic-map.md - route domain questions through knowledge-search first.
+  Research mm: 12 runs, 1 unfinished (E9), 2 awaiting review, best E7 - research/mm/STATUS.md.
   No knowledge page for api-server yet - offer knowledge-ingest to build one from its docs.
 
 Suggestions (a missing project page, a missing embedding model) appear at most once a week each.
@@ -45,6 +46,45 @@ def embeddings_missing(h: pathlib.Path) -> bool:
 EMBED_HINT = ("RAG has no embedding model (stdlib hashing: weaker, no cross-language search) - offer once "
               "to install one: `kb_rag.py setup` from the knowledge-search skill (a private venv, about 370 MB of downloads); "
               "the next kb_rag.py search rebuilds the store.")
+
+
+def active_research(root: pathlib.Path) -> list:
+    """One line per research folder of this project (the three touched last): runs, unfinished runs,
+    experiments waiting for the reviewer, the best one. Read from its ledger; content never enters."""
+    try:
+        ledgers = sorted(root.glob("research/*/LEDGER.jsonl"), key=lambda p: p.stat().st_mtime, reverse=True)[:3]
+    except OSError:
+        return []
+    out = []
+    for path in ledgers:
+        entries = []
+        for line in read(path).split("\n"):
+            try:
+                entry = json.loads(line)
+            except ValueError:
+                continue
+            if isinstance(entry, dict):
+                entries.append(entry)
+        starts = [e for e in entries if e.get("kind") == "run_start"]
+        open_runs = {}
+        for e in entries:
+            if e.get("kind") in ("run_start", "run_end"):
+                open_runs[e.get("id")] = open_runs.get(e.get("id"), 0) + (1 if e["kind"] == "run_start" else -1)
+        unfinished = [i for i, n in open_runs.items() if n > 0]
+        latest = {e.get("id"): e.get("seq") for e in starts}
+        judged = {e.get("id") for e in entries if e.get("kind") == "judge" and e.get("run_seq") == latest.get(e.get("id"))}
+        reviewed = {e.get("id") for e in entries if e.get("kind") == "review" and e.get("run_seq") == latest.get(e.get("id"))}
+        best = next((e.get("id") for e in reversed(entries) if e.get("kind") == "best"), None)
+        bits = [f"{len(starts)} runs"]
+        if unfinished:
+            bits.append(f"{len(unfinished)} unfinished ({', '.join(map(str, unfinished[:3]))})")
+        if judged - reviewed:
+            bits.append(f"{len(judged - reviewed)} awaiting review")
+        if best:
+            bits.append(f"best {best}")
+        out.append(f"Research {path.parent.name}: {', '.join(bits)} - {path.parent.relative_to(root)}/STATUS.md "
+                   "(`lab.py status` refreshes it); resume /research from there.")
+    return out
 
 
 def read(path) -> str:
@@ -112,6 +152,7 @@ def main() -> int:
                      "questions through the knowledge-search skill before searching elsewhere.")
     repo = repo_key(payload)
     root = pathlib.Path(os.environ.get("CLAUDE_PROJECT_DIR") or payload.get("cwd") or os.getcwd())
+    lines += active_research(root)
     page_key = f"kbpage:{repo}"
     if (root / ".git").exists() and not (h / "knowledge" / "projects" / f"{repo}.md").exists() \
             and nudges.due(page_key):

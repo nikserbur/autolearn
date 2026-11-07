@@ -40,7 +40,5 @@ Simulation and verification: ENVIRONMENT.md (requirements S1-S7, V1-V5 with evid
 <Domain checks the reviewer must run on top of its protocol: leakage traps specific to this
 data, fill-side conventions, units, known data quirks.>
 
-## Round 1
-| id | hypothesis | rationale | expected effect | cost (h) | pass criterion | status |
-|---|---|---|---|---|---|---|
-| H1.1 | | | | | | pending |
+## Rounds
+One file per round in `KB/rounds/R<NN>.md` (plan, critique, outcome); this program stays short.

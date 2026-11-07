@@ -238,6 +238,10 @@ def cmd_check(a) -> int:
             errors.append(f"{id}: has a result but was never registered")
     warnings = [f"{e['id']}: started {e['ts']} (pid {e.get('pid')}), no end: running, or crashed" for e in unfinished(ledger)]
     errors += still_valid(a.lab, [id for id, row in rows.items() if "INVALID" in row.get("decision", "").upper()])
+    knowledge = a.lab / "KB" / "KNOWLEDGE.md"
+    if knowledge.exists() and knowledge.stat().st_size > 30_000:
+        warnings.append(f"KNOWLEDGE.md is {knowledge.stat().st_size // 1000} KB: keep the current state there and move "
+                        "older sections to KB/archive/KNOWLEDGE-<date>.md (still searched, no longer read in full)")
     if len(best) > 1:
         errors.append(f"more than one row marked BEST: {', '.join(best)}")
     recorded_best = current_best(ledger)

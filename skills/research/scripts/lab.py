@@ -22,6 +22,11 @@ Selection (every run is tested as it ends on results/ID/daily.tsv: a `period` co
     lab.py best --lab DIR ID                         PASS, reviewer PASS, a discovery, DSR >= 0.95, beats the best
     lab.py fdr --lab DIR                             every test with its LORD++ decision and Benjamini-Yekutieli by round
 
+Where it stands (for a new session, or the user):
+    lab.py jobs --lab DIR                            every run: running, interrupted, done or crashed
+    lab.py status --lab DIR                          writes DIR/STATUS.md: requirements, rounds, trials, best, holdout,
+                                                     what waits for whom
+
 Environment:
     lab.py env KB/ENVIRONMENT.md [--stage sim|verify]
                                                      requirements still unproven (exit 1 if any)
@@ -51,7 +56,7 @@ import re
 import subprocess
 import sys
 
-from labkit import protocol, selection, tables
+from labkit import protocol, selection, status, tables
 
 REQUIRED = ("ts", "stage", "action")
 EXPECTED = ("inputs", "reason", "outcome")
@@ -353,6 +358,8 @@ def main(argv=None) -> int:
     s.add_argument("--round", default="")
     s.add_argument("--by", default="rl-hypothesis-reviewer")
     with_lab(sub, "fdr")
+    with_lab(sub, "jobs")
+    with_lab(sub, "status")
     s = sub.add_parser("env")
     s.add_argument("file")
     s.add_argument("--stage", choices=("sim", "verify", "all"), default="all")
@@ -379,6 +386,7 @@ def main(argv=None) -> int:
             "check": protocol.cmd_check, "holdout": protocol.cmd_holdout, "brief": protocol.cmd_brief,
             "settings": selection.cmd_settings, "stats": selection.cmd_stats, "compare": selection.cmd_compare,
             "review": selection.cmd_review, "best": selection.cmd_best, "fdr": selection.cmd_fdr,
+            "jobs": status.cmd_jobs, "status": status.cmd_status,
             "env": cmd_env, "trace": cmd_trace, "truncate": cmd_truncate, "sample": cmd_sample,
             "repro": cmd_repro}[a.cmd](a)
 

@@ -26,7 +26,8 @@ class LabCase(unittest.TestCase):
     def lab(self, *args, expect=0):
         proc = subprocess.run([sys.executable, str(LAB), *args], capture_output=True, text=True,
                               cwd=self.dir, timeout=60)
-        self.assertEqual(proc.returncode, expect, proc.stdout + proc.stderr)
+        if expect is not None:
+            self.assertEqual(proc.returncode, expect, proc.stdout + proc.stderr)
         return proc.stdout
 
     def write(self, name, text):
@@ -419,6 +420,33 @@ class Protocol(LabCase):
         lowered = knowledge.replace("- E1 earned", "- e1 invalidates nothing; it earned")
         self.write("research/toy/KB/KNOWLEDGE.md", lowered)
         self.assertIn("rests on E1", self.p("check", expect=1))
+
+    def test_jobs_and_status_say_where_the_research_stands(self):
+        self.assertIn("no runs yet", self.p("jobs"))
+        self.make_best("E1", 0.5, 1)
+        self.row("E2", "net_per_trade > 0 & trades >= 30")
+        self.write("research/toy/KB/expect/E2.md", "| Stage | Should do |\n|---|---|\n| day | earn |\n")
+        self.p("register", "E2")
+        self.series("E2", 0.2, 5)
+        self.p("judge", "E2", expect=None)
+        sys.path.insert(0, str(LAB.parent))
+        from labkit.ledger import Ledger
+        Ledger(self.labdir).append("run_start", id="E3", command=["x"], candidate="c", hashes={}, pid=999999)
+        jobs = self.p("jobs")
+        self.assertIn("E1\tdone", jobs)
+        self.assertIn("E3\tinterrupted", jobs)
+        status = self.p("status")
+        self.assertTrue((self.labdir / "STATUS.md").exists())
+        self.assertIn("- Best: E1, mean", status)
+        self.assertIn("E3: interrupted", status)
+        self.assertIn("E2: judged, awaiting the reviewer's verdict", status)
+        self.assertIn("E1 is the best but has not been looked at on the holdout", status)
+        self.assertIn("Trials: 3", status)
+        self.assertFalse((self.labdir / "KB" / "STATUS.md").exists())
+
+    def test_a_long_knowledge_file_is_flagged(self):
+        self.write("research/toy/KB/KNOWLEDGE.md", "# Knowledge\n\n" + "## Note\n- x\n" * 4000)
+        self.assertIn("move older sections to KB/archive/", self.p("check"))
 
     def test_the_brief_traces_every_number_to_the_record(self):
         self.passed()

@@ -77,7 +77,8 @@ def record_test(lab: pathlib.Path, ledger: Ledger, id: str, run: dict, exit_code
 
     def compute(led: Ledger) -> dict:
         settings, prior = research_settings(led), led.find("stats")
-        trials = sum(e.get("configs", 1) for e in prior) + configs
+        # every start is a trial, interrupted ones included, and a sweep inside a run counts as its size
+        trials = len(led.find("run_start")) + sum(max(0, e.get("configs", 1) - 1) for e in prior) + configs - 1
         fields = {"id": id, "run_seq": run["seq"], "candidate": run["candidate"], "round": row.get("round", ""),
                   "configs": configs, "trials": trials, **{f"setting_{k}": v for k, v in settings.items()}}
         try:

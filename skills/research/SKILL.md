@@ -22,9 +22,11 @@ Inside the project, `research/<slug>/` (or the folder the user names, or the one
 
 ```
 KB/PROGRAM.md        goal, the user's hard rules, rejected directions, metrics, data splits,
-                     project review checklist, round tables (H<round>.<n>)
+                     project review checklist
+KB/rounds/R<NN>.md   one file per round: the plan (H<round>.<n>), the critique, the outcome
 KB/ENVIRONMENT.md    the simulation and verification environments, requirements with evidence
-KB/KNOWLEDGE.md      conclusions with numbers and sources, newest on top
+KB/KNOWLEDGE.md      conclusions with numbers and sources, newest on top; under 30 KB
+KB/archive/          older KNOWLEDGE sections, still searched, no longer read in full
 KB/EXPERIMENTS.tsv   one row per experiment, written BEFORE the run, completed after it
 KB/expect/<id>.md    what experiment <id> should do, stage by stage, written before the run
 KB/sources/          what rl-source-scout collected, every fact with a source
@@ -32,7 +34,9 @@ KB/reviews/          R<NN>_<subject>.md from rl-hypothesis-reviewer
 KB/BRIEF_<date>.md   plain-language summary for the user, copied in once `lab.py brief` passes
 LEDGER.jsonl         the protocol's record: registrations, runs, verdicts, holdout looks (hash-chained)
 sealed/              verification reports; outside KB/, never indexed, never read by the controller
-scripts/ results/    numbered scripts (NN_name); results/<id>/ with metrics.tsv, trace.tsv, RUN.json, run.log
+scripts/ results/    numbered scripts (NN_name); results/<id>/ with metrics.tsv, daily.tsv, trace.tsv,
+                     RUN.json, run.log
+STATUS.md            where the research stands, written by `lab.py status`; never edited by hand
 ```
 
 **The ledger is the record.** Every experiment is registered, run, judged and looked at on the
@@ -41,9 +45,12 @@ decision, check-in or brief. You do not decide whether an experiment passed: its
 criterion does.
 
 Templates: [PROGRAM-TEMPLATE.md](PROGRAM-TEMPLATE.md), [ENVIRONMENT-TEMPLATE.md](ENVIRONMENT-TEMPLATE.md),
-[EXPECT-TEMPLATE.md](EXPECT-TEMPLATE.md), [KNOWLEDGE-TEMPLATE.md](KNOWLEDGE-TEMPLATE.md),
-[EXPERIMENTS-TEMPLATE.tsv](EXPERIMENTS-TEMPLATE.tsv). Resuming an existing folder: read `PROGRAM.md`,
-`ENVIRONMENT.md`, the top of `KNOWLEDGE.md`, the last rows of `EXPERIMENTS.tsv` and the last review.
+[EXPECT-TEMPLATE.md](EXPECT-TEMPLATE.md), [ROUND-TEMPLATE.md](ROUND-TEMPLATE.md),
+[KNOWLEDGE-TEMPLATE.md](KNOWLEDGE-TEMPLATE.md), [EXPERIMENTS-TEMPLATE.tsv](EXPERIMENTS-TEMPLATE.tsv).
+**Resuming** an existing folder, after a break, a crash or in a new session (the session brief names
+active ones): `LAB status --lab <folder>` first; its "Next" list says what is running, interrupted or
+waiting for the reviewer. Then read `PROGRAM.md`, `ENVIRONMENT.md`, the last round file, the top of
+`KNOWLEDGE.md` and the last review; nothing else needs to be in the context.
 
 Commands below: `RAG` is `python3 "${CLAUDE_SKILL_DIR}/../knowledge-search/scripts/kb_rag.py"`,
 `LAB` is `python3 "${CLAUDE_SKILL_DIR}/scripts/lab.py"` (protocol commands take `--lab <folder>`), and `SOURCES` is the file
@@ -107,8 +114,9 @@ accepts the risk (quote it in `PROGRAM.md`). V1-V5 are proven for a candidate be
 (`--stage verify`).
 
 ## 3. Round plan
-Add `## Round <n>` to `PROGRAM.md`, one row per hypothesis:
+Write `KB/rounds/R<n>.md` from the template, one row per hypothesis in its plan:
 `H<n>.<k> | hypothesis | rationale (KB path:line or review) | expected effect | cost (hours) | pass criterion | status`.
+`PROGRAM.md` stays short; a round lives in its own file, so no one reads every round to plan the next.
 - Derive hypotheses from the last review's "Next tests", its discrepancies, the KB and the user's
   directions. Keep every parallel direction the user named alive in each round.
 - Rank by expected value per hour.
@@ -120,23 +128,27 @@ Add `## Round <n>` to `PROGRAM.md`, one row per hypothesis:
   `net_per_trade > 0 & trades >= 300 & worst_day > -50`.
 
 ## 4. Critique before compute
-Agent -> `rl-hypothesis-reviewer`, mode `critique`, round `R<NN>`: the round table, the expect files,
-the RAG command, `SOURCES`, limits. Apply KEEP / CUT / CHANGE to the rows and expect files; add the
-missing hypotheses it found. Skip only for a single cheap hypothesis.
+Agent -> `rl-hypothesis-reviewer`, mode `critique`, round `R<NN>`: the round file, the expect files,
+the RAG command, `SOURCES`, limits. Apply KEEP / CUT / CHANGE to the rows and expect files, record it
+in the round file's "Critique", and add the missing hypotheses it found. Skip only for a single cheap hypothesis.
 
 ## 5. Register and run
 1. `LAB register --lab <folder> <id>`: from now on the row's pre-run cells and `expect/<id>.md` are
    fixed; `LAB check` reports any edit. A changed experiment gets a new id.
-2. `LAB run --lab <folder> <id> --code <script> --config <file> --data <file> -- <command>`: in the
-   simulation environment only, never on the holdout. `--code` names every file that makes the
+2. Agent -> `rl-executor`, mode `run`: the research folder, the id, the LAB command, the run
+   arguments, the expected duration, the limits. It runs
+   `LAB run --lab <folder> <id> --code <script> --config <file> --data <file> -- <command>`, in the
+   simulation environment only, never on the holdout, and replies in a few lines; a long run it
+   starts in the background and you call it again in mode `collect`. You do not read logs yourself. `--code` names every file that makes the
    candidate; `metrics.tsv` holds one row of totals (aggregate seeds and days before writing it), and
    `daily.tsv` one row per day or period (`period`, `pnl` or the value the strategy is judged on). It records the candidate hash and the attempt
    (every attempt is a trial, crashes included), moves stale outputs aside, logs to
    `results/<id>/run.log`, and writes `RUN.json` and `DONE`. Long jobs: start it in the background
    with a monitor; never stop or touch other people's processes, no `pkill`.
-3. Check the trace: `LAB trace results/<id>/trace.tsv --expect KB/expect/<id>.md` (look-ahead makes
-   the run `INVALID`).
-4. While jobs run, do the next useful thing (another hypothesis, a cheap analysis), not polling.
+3. The executor checks the trace (`LAB trace results/<id>/trace.tsv --expect KB/expect/<id>.md`);
+   look-ahead makes the run `INVALID`.
+4. While jobs run, do the next useful thing (another hypothesis, a cheap analysis), not polling;
+   `LAB jobs --lab <folder>` says which runs are going, which ended and which were interrupted.
 
 ## 6. Judge and record
 `LAB judge --lab <folder> <id>` applies the registered criterion to the run's own `metrics.tsv` and
@@ -169,13 +181,15 @@ next) with the review as a source, and accepted discrepancies to its "Discrepanc
 pointing to the hypothesis it became.
 
 ## 8. Synthesis: conclusions -> next hypotheses
-Before the next round: retrieve what the KB now says on the direction, write a short "What we know
-now / what failed and why / what surprised us / what that suggests" block at the top of
-`KNOWLEDGE.md`, then go to step 3. Improve the strongest result first and keep the side directions
-moving.
+Before the next round: fill the round file's "Outcome", retrieve what the KB now says on the
+direction, write a short "What we know now / what failed and why / what surprised us / what that
+suggests" block at the top of `KNOWLEDGE.md`, then go to step 3. Keep `KNOWLEDGE.md` under 30 KB: move
+older sections to `KB/archive/KNOWLEDGE-<date>.md` (`LAB check` warns). Improve the strongest result
+first and keep the side directions moving.
 
 ## 9. Check-ins that never block
-After each finished experiment, review or round, post a short message in chat and **keep working**:
+After each finished experiment, review or round, run `LAB status --lab <folder>` (it rewrites
+`STATUS.md`), post a short message in chat and **keep working**:
 what finished, the key numbers, the decision, what surprised the reviewer, what runs now and what
 comes next, in plain words with the mechanism. The user steers by writing while you work: read such a
 message at the next decision point and apply it (a new rule goes into `PROGRAM.md` verbatim, a
