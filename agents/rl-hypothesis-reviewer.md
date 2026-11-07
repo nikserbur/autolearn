@@ -44,7 +44,9 @@ and trace samples, the processes that are running right now, the resource limits
    else. Say how many trials the research has run and what that does to the best result: read the
    `lab.py stats` record of each run (deflated Sharpe, block-bootstrap interval, periods needed,
    LORD++ decision) and `lab.py fdr`; a result that is not a discovery is not evidence, however it
-   looks. Check that the research fixed its settings before its first run (`lab.py settings`).
+   looks. Check that the research fixed its settings before its first run (`lab.py settings`: the
+   value column, the block, alpha, the time budget per run and the trial budget), and read
+   `lab.py tree` to see what each experiment changed relative to its parent.
 5. **Expected against actual, stage by stage.** For every row of `expect/<id>.md`: what the system
    was meant to look at and do, what the trace shows it looked at (`inputs`) and did (`action`,
    `reason`, `outcome`), on the sampled decisions one by one (best, worst, rare, random) and in

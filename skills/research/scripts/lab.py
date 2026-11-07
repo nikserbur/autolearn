@@ -31,7 +31,7 @@ Search (experiments form a tree through the journal's `parent` column):
     lab.py tree --lab DIR                            the tree, with each node's state and test
     lab.py next --lab DIR [--k 3]                    which nodes to grow: debug a crash, improve the best lower
                                                      bounds across branches, start a new idea when stuck
-    lab.py worktree --lab DIR add|remove|list [ID] [--from REF] [--force]
+    lab.py worktree --lab DIR add|remove|list [ID] [--from REF] [--repo PATH] [--force]
                                                      a separate git working copy per experiment that changes code
 
 Environment:
@@ -362,6 +362,7 @@ def main(argv=None) -> int:
     s.add_argument("action", choices=("add", "remove", "list"))
     s.add_argument("id", nargs="?")
     s.add_argument("--from", dest="ref")
+    s.add_argument("--repo", help="the project's repository, when the research folder is not inside it")
     s.add_argument("--force", action="store_true")
     for name in ("stats", "best"):
         with_lab(sub, name).add_argument("id")

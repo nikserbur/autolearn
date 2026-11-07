@@ -81,6 +81,10 @@ def record_test(lab: pathlib.Path, ledger: Ledger, id: str, run: dict, exit_code
         fields = {"id": id, "run_seq": run["seq"], "candidate": run["candidate"], "round": row.get("round", ""),
                   "configs": configs, "trials": trials, **{f"setting_{k}": v for k, v in settings.items()}}
         try:
+            if exit_code == 124:
+                raise ValueError("the run was stopped by the research's time budget")
+            if exit_code == -15 or exit_code == -1:
+                raise ValueError("the run was interrupted")
             if exit_code:
                 raise ValueError(f"the run exited with code {exit_code}")
             series = read_series(path, settings["column"])

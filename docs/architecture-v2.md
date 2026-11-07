@@ -1,6 +1,6 @@
 # research-lab v2: evaluation of v0.4.0 and the proposed architecture
 
-Status: **phases 1-4 implemented in v0.5.0-v0.8.0** (2026-11-07); phase 5 is a proposal.
+Status: **all five phases implemented in v0.5.0-v0.9.0** (2026-11-07).
 
 ## How v0.4.0 was evaluated
 
@@ -114,7 +114,7 @@ expectation), and a scripted reviewer run is scored on finding the rest.
 | 2 (done, v0.6.0) | trial count, deflated Sharpe, block bootstrap for BEST, BY within a round, LORD++ across rounds | H2 |
 | 3 (done, v0.7.0) | typed knowledge, private research KBs, supersession, stale-fact lint, lock-before-model | H5, M3 |
 | 4 (done, v0.8.0) | executor agent, `status`/`STATUS.md`, resumable jobs, per-round files, brief lists active researches | H6, M2 |
-| 5 (optional) | tree search over experiments in parallel worktrees with per-run budgets | greedy local optima |
+| 5 (done, v0.9.0) | tree search over experiments in parallel worktrees with per-run budgets | greedy local optima |
 
 ## Sources
 - Karpathy, autoresearch: https://github.com/karpathy/autoresearch

@@ -23,6 +23,8 @@ def jobs(lab: pathlib.Path, ledger: Ledger) -> list:
             state = "running" if live(lab, start) else "interrupted"
         elif end.get("interrupted"):
             state = "interrupted"
+        elif end.get("timed_out"):
+            state = "timed out"
         else:
             state = "done" if end.get("exit") == 0 else "crashed"
         out.append({"id": start["id"], "seq": start.get("seq"), "start": start.get("ts", "?"), "state": state,

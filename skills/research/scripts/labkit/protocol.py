@@ -135,6 +135,12 @@ def cmd_register(a) -> int:
     ledger, row = Ledger(a.lab), journal(a.lab).get(a.id)
     if row is None:
         return fail(f"no row {a.id} in KB/EXPERIMENTS.tsv: write it first")
+    lines = [line for line in (a.lab / "KB" / "EXPERIMENTS.tsv").read_text(encoding="utf-8").split("\n") if line.strip()]
+    width = len(lines[0].split("\t"))
+    for line in lines[1:]:
+        if line.split("\t")[0] == a.id and len(line.split("\t")) != width:
+            return fail(f"the row of {a.id} has {len(line.split(chr(9)))} cells and the header {width}: "
+                        "its cells would land in the wrong columns")
     if not expect_file(a.lab, a.id).is_file():
         return fail(f"no KB/expect/{a.id}.md: write the expected behaviour first")
     if ledger.find("register", a.id):
@@ -145,7 +151,7 @@ def cmd_register(a) -> int:
         return fail(f"pass_criterion of {a.id}: {e}")
     parent = row.get("parent", "").strip()
     if parent and not ledger.find("register", parent):
-        return fail(f"parent {parent!r} of {a.id} is not a registered experiment: a child changes something that ran")
+        return fail(f"parent {parent!r} of {a.id} is not a registered experiment: register the parent first")
     ledger.append("register", id=a.id, fields={k: row.get(k, "") for k in PRE_RUN},
                   expect_sha=sha256_file(expect_file(a.lab, a.id)), criterion=row["pass_criterion"])
     print(f"registered {a.id}: {row['pass_criterion']}. Its row and expect/{a.id}.md are fixed from now on.")
@@ -168,9 +174,6 @@ def cmd_run(a) -> int:
         return fail(f"{a.id} has run already; --again runs it once more and counts as another trial")
     from . import selection  # every run is a test, recorded as it ends
     settings = selection.research_settings(ledger)
-    if settings["max_trials"] and trial_count(ledger) >= settings["max_trials"]:
-        return fail(f"the research's budget of {settings['max_trials']} trials is spent: stop, write the brief, "
-                    "or start a new research")
     for job in runs(ledger):  # close dead runs first, so they count as tests with p = 1
         if job["end"] is None and not live(a.lab, job["start"]):
             start = job["start"]
@@ -196,7 +199,17 @@ def cmd_run(a) -> int:
     if (out / "DONE").exists():
         (out / "DONE").unlink()
     start = time.time()
-    entry = ledger.append("run_start", id=a.id, command=a.command, candidate=candidate, hashes=hashes, pid=os.getpid())
+
+    def within_budget(led: Ledger) -> dict:  # checked under the ledger's lock, so parallel runs cannot both slip in
+        if settings["max_trials"] and trial_count(led) >= settings["max_trials"]:
+            raise BudgetSpent(settings["max_trials"])
+        return {}
+
+    try:
+        entry = ledger.append("run_start", compute=within_budget, id=a.id, command=a.command, candidate=candidate,
+                              hashes=hashes, pid=os.getpid())
+    except BudgetSpent as e:
+        return fail(f"the research's budget of {e} trials is spent: stop, write the brief, or start a new research")
     beat, stop = heartbeat(a.lab, entry), threading.Event()
     beat.touch()
 
@@ -208,19 +221,32 @@ def cmd_run(a) -> int:
     info = {"id": a.id, "command": a.command, "candidate": candidate, "pid": os.getpid(),
             "start": datetime.datetime.now().isoformat(timespec="seconds")}
     (out / "RUN.json").write_text(json.dumps(info, indent=1), encoding="utf-8")
+    ending = {}
     with (out / "run.log").open("w", encoding="utf-8") as log:
+        own_group = bool(settings["run_timeout"]) and os.name != "nt"  # only a time budget needs its own group
+        handlers, child = {}, None
         try:
             child = subprocess.Popen(a.command, stdout=log, stderr=subprocess.STDOUT,
-                                     env=dict(os.environ, RESEARCH_LAB_RUN=a.id), start_new_session=os.name != "nt")
+                                     env=dict(os.environ, RESEARCH_LAB_RUN=a.id), start_new_session=own_group)
             info["child_pid"] = child.pid
             (out / "RUN.json").write_text(json.dumps(info, indent=1), encoding="utf-8")
-            code = wait_within(child, settings["run_timeout"], log)
+            handlers = catch_stops()
+            code = wait_within(child, settings["run_timeout"], log, own_group)
+            if code == TIMED_OUT:
+                ending["timed_out"] = True
         except OSError as e:
             log.write(f"lab.py: could not start the command: {e}\n")
             code = 127
+        except (Stopped, KeyboardInterrupt):  # Ctrl-C, a closed terminal, a harness ending: the run ends with us
+            log.write("\nlab.py: stopped from outside; the run is recorded as interrupted\n")
+            if child is not None:
+                stop_group(child, own_group)
+            code, ending["interrupted"] = -15, True
+        finally:
+            restore(handlers)
     stop.set()
     seconds = round(time.time() - start, 1)
-    ledger.append("run_end", id=a.id, exit=code, seconds=seconds, start_seq=entry["seq"],
+    ledger.append("run_end", id=a.id, exit=code, seconds=seconds, start_seq=entry["seq"], **ending,
                   metrics_sha=sha256_file(out / "metrics.tsv"), daily_sha=sha256_file(out / "daily.tsv"))
     with contextlib.suppress(OSError):
         beat.unlink()
@@ -233,28 +259,68 @@ def cmd_run(a) -> int:
     return code
 
 
-def wait_within(child, limit, log) -> int:
-    """The child's exit code; past the research's time budget its whole process group is stopped and the
-    run ends with 124, as `timeout` does, so every run gets the same compute."""
+TIMED_OUT = 124
+
+
+class BudgetSpent(Exception):
+    pass
+
+
+class Stopped(Exception):
+    pass
+
+
+def catch_stops() -> dict:
+    """While a run waits, SIGTERM and SIGHUP end it cleanly instead of leaving it unrecorded."""
+    import signal
+
+    def raise_stop(signum, frame):
+        raise Stopped(signum)
+
+    old = {}
+    for name in ("SIGTERM", "SIGHUP"):
+        sig = getattr(signal, name, None)
+        if sig is not None:
+            with contextlib.suppress(ValueError, OSError):  # not the main thread: leave signals alone
+                old[sig] = signal.signal(sig, raise_stop)
+    return old
+
+
+def restore(handlers: dict) -> None:
+    import signal
+    for sig, handler in handlers.items():
+        with contextlib.suppress(ValueError, OSError):
+            signal.signal(sig, handler)
+
+
+def stop_group(child, own_group: bool, grace: float = 10) -> None:
+    """Stop the run and everything it started: SIGTERM, a grace period, then SIGKILL to the whole group
+    whatever the leader did; on Windows the process tree goes with taskkill."""
+    if os.name == "nt":
+        subprocess.run(["taskkill", "/T", "/F", "/PID", str(child.pid)], capture_output=True)
+    else:
+        import signal
+        kill = (lambda sig: os.killpg(child.pid, sig)) if own_group else child.send_signal
+        with contextlib.suppress(ProcessLookupError, PermissionError):
+            kill(signal.SIGTERM)
+        with contextlib.suppress(subprocess.TimeoutExpired):
+            child.wait(timeout=grace)
+        with contextlib.suppress(ProcessLookupError, PermissionError):
+            kill(signal.SIGKILL)  # a grandchild that ignored SIGTERM goes too
+    with contextlib.suppress(subprocess.TimeoutExpired):
+        child.wait(timeout=grace)
+
+
+def wait_within(child, limit, log, own_group: bool) -> int:
+    """The child's exit code; past the research's time budget it and everything it started are stopped
+    and the run ends with 124, as `timeout` does, so every run gets the same compute."""
     try:
         return child.wait(timeout=limit)
     except subprocess.TimeoutExpired:
         log.write(f"\nlab.py: stopped after the research's budget of {limit} s per run\n")
         log.flush()
-        if os.name == "nt":
-            child.kill()
-        else:
-            import signal
-            for sig, grace in ((signal.SIGTERM, 10), (signal.SIGKILL, 10)):
-                with contextlib.suppress(ProcessLookupError):
-                    os.killpg(child.pid, sig)
-                try:
-                    child.wait(timeout=grace)
-                    break
-                except subprocess.TimeoutExpired:
-                    continue
-        child.wait()
-        return 124
+        stop_group(child, own_group)
+        return TIMED_OUT
 
 
 def cmd_judge(a) -> int:

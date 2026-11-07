@@ -8,7 +8,7 @@ Claude runs research the way a careful lab does: it writes down what it expects 
 
 [![CI](https://github.com/nikserbur/research-lab/actions/workflows/ci.yml/badge.svg)](https://github.com/nikserbur/research-lab/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-0.8.0-informational)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.9.0-informational)](CHANGELOG.md)
 [![Claude Code plugin](https://img.shields.io/badge/Claude%20Code-plugin-D97757)](#install)
 
 </div>
@@ -151,6 +151,16 @@ Before a run, Claude writes `KB/expect/<id>.md`: for each stage (signal, decisio
 | neighbours | other instruments unchanged | NQ trades doubled | shared risk limit | the limit is shared -> split it per instrument |
 
 <sub>Illustrative. Each discrepancy goes into `KNOWLEDGE.md` and becomes a row in the next round's table, with a mechanism, a cost and a pass criterion.</sub>
+
+### A search, not a hill climb
+
+Agents that only polish their best result get stuck on it. Each experiment names its parent, so the experiments form a tree, and `lab.py next` says where the next runs should go: fix a crash while the fix chain is short, grow the nodes with the best lower bound but no more than half the runs in one branch, leave a node whose three children did no better, and start a different idea when the best has not changed in five runs. Every run gets the same time budget, the research has a trial budget, and experiments that change code run side by side in their own git worktrees.
+
+```text
+lab.py tree --lab research/mm            # the experiments as a tree, each with its state and test
+lab.py next --lab research/mm --k 3      # debug E9 / improve E7 / draft a new root, with the reason
+lab.py worktree --lab research/mm add E12   # its own copy of the code, for a parallel run
+```
 
 ### Training a model
 
@@ -325,7 +335,7 @@ See [SECURITY.md](SECURITY.md) and [docs/hooks.md](docs/hooks.md).
 
 ## Status and limitations
 
-- **v0.8.0.** The hooks and scripts are covered by tests. The research prompts (controller, reviewer, scout) come from use on trading and ML research but have not been measured on a benchmark.
+- **v0.9.0.** The hooks and scripts are covered by tests. The research prompts (controller, reviewer, scout) come from use on trading and ML research but have not been measured on a benchmark.
 - **The environment checks are as good as the runs behind them.** `lab.py truncate` finds a look-ahead only across the cut you choose, so cut at several times; whether costs are realistic is the reviewer's judgement, not a script's.
 - **The ledger guards against drift, not against a determined forger.** Hashes catch edits to registered rows, expectations and the ledger itself; nothing stops someone from rewriting the whole ledger, or from running experiments outside `lab.py`, though `check` flags results that were never registered.
 - **The statistics assume a value per period.** The deflated Sharpe and the bootstrap need `daily.tsv`; with fewer than 20 periods a run counts as a test with p = 1. LORD++ grows strict as runs pile up without a discovery, so a long research needs stronger evidence for each new result; that is the point, and it can make a real but small edge go unrecognised. Strongly persistent daily results (lag-one correlation near 0.9) are still called significant too often: 9% at 5% in simulation. LORD++'s guarantee assumes independent p-values, and runs on the same days are not. PBO by combinatorial cross-validation is not implemented.

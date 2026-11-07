@@ -107,9 +107,10 @@ none. Prove each requirement and write the proof in Evidence:
 - S5: the three control runs, registered and run like any experiment;
 - S6: `LAB trace results/<id>/trace.tsv`; every decision is a row, including deciding to do nothing.
 
-Fix the statistics once, before the first run: `LAB settings --lab <folder> --column pnl --block auto
---alpha 0.05` (the value column of `daily.tsv`, the bootstrap block, the error rate; the defaults are
-these). `LAB env KB/ENVIRONMENT.md --stage sim` lists what is unproven; a ❌ blocks round 1 unless the user
+Fix the statistics and the budgets once, before the first run: `LAB settings --lab <folder> --column
+pnl --block auto --alpha 0.05 --run-timeout <seconds> --max-trials <N>` (the value column of
+`daily.tsv`, the bootstrap block, the error rate, the same time for every run so results compare, and
+the trials the whole research may spend). `LAB env KB/ENVIRONMENT.md --stage sim` lists what is unproven; a ❌ blocks round 1 unless the user
 accepts the risk (quote it in `PROGRAM.md`). V1-V5 are proven for a candidate before its holdout look
 (`--stage verify`).
 
@@ -117,11 +118,18 @@ accepts the risk (quote it in `PROGRAM.md`). V1-V5 are proven for a candidate be
 Write `KB/rounds/R<NN>.md` from the template, one row per hypothesis in its plan:
 `H<n>.<k> | hypothesis | rationale (KB path:line or review) | expected effect | cost (hours) | pass criterion | status`.
 `PROGRAM.md` stays short; a round lives in its own file, so no one reads every round to plan the next.
-- Derive hypotheses from the last review's "Next tests", its discrepancies, the KB and the user's
-  directions. Keep every parallel direction the user named alive in each round.
+- Start from `LAB next --lab <folder>`: it reads the tree of experiments and says what is owed (runs
+  never started, interrupted ones, a harness that wrote nothing testable) and which nodes to grow
+  (debug a crash, improve the best lower bounds across branches, leave a node whose tested children
+  did no better, start a new idea when the best has stopped improving), and how many trials are
+  left; at zero it says stop. It advises; you decide. Then derive the hypotheses from the last review's "Next
+  tests", its discrepancies, the KB and the user's directions; `LAB tree --lab <folder>` shows the
+  whole search. Keep every parallel direction the user named alive in each round.
+- Each experiment names its `parent` in the journal: the experiment it changes, or nothing for a new
+  idea. One change per child, so the tree says what each change did.
 - Rank by expected value per hour.
-- For each hypothesis write its `EXPERIMENTS.tsv` row (id, round, hypothesis id, change, expected,
-  pass criterion, commit, data hash, seed, `pending`) and `KB/expect/<id>.md` from the template: per
+- For each hypothesis write its `EXPERIMENTS.tsv` row (id, round, parent, hypothesis id, change,
+  expected, pass criterion, commit, data hash, seed, `pending`) and `KB/expect/<id>.md` from the template: per
   stage what the system should look at, what it should do, where the trace or a metric shows it and
   the expected value; what must not happen; the neighbouring parts the change may move.
 - The pass criterion is machine-readable, metric names from `metrics.tsv` joined by `&`:
@@ -146,7 +154,13 @@ in the round file's "Critique", and add the missing hypotheses it found. Skip on
    `results/<id>/run.log`, and writes `RUN.json` and `DONE`. Nobody stops or touches other people's processes; no `pkill`.
 3. The executor checks the trace (`LAB trace results/<id>/trace.tsv --expect KB/expect/<id>.md`);
    when it reports look-ahead or a broken trace, set the row's decision to `INVALID` yourself.
-4. While jobs run, do the next useful thing (another hypothesis, a cheap analysis), not polling;
+4. Independent experiments run in parallel: one `rl-executor` each, no more than the cores the
+   program allows, since every run gets the same wall-clock budget. Crashes, timeouts, interrupted
+   runs and each configuration of a sweep all count as trials, and every run that is not tested
+   costs a share of the error budget as a test with p = 1. An experiment that changes the project's code gets its own copy first,
+   `LAB worktree --lab <folder> add <id>` (its own branch, so commits outlive the copy), and its
+   `--code` files come from there; remove the copy when the run is judged, except the best
+   candidate's, which stays until its holdout look is closed. `--lab` always names the main folder. While jobs run, do the next useful thing, not polling;
    `LAB jobs --lab <folder>` says which runs are going, which ended and which were interrupted.
 
 ## 6. Judge and record
@@ -205,8 +219,9 @@ conflicts with the evidence or the next step costs far more than the program all
    look. One look budget serves the whole research and any failure spends the holdout: a FAIL is a
    result for `KNOWLEDGE.md`, and confirming another candidate needs a new, later window, which means
    a new research folder that starts from this one's knowledge.
-2. Stop when the round count is reached, a candidate passes verification, or two rounds in a row
-   bring nothing (say so and propose a change of direction).
+2. Stop when the round count or the trial budget is reached, a candidate passes verification, or
+   two rounds in a row bring nothing and `LAB next` has no branch left worth growing (say so and
+   propose a change of direction).
 3. Write `<folder>/BRIEF_<date>.md`, outside `KB/` (results, the best variant with its deflated
    Sharpe and interval, the number of trials and discoveries from `LAB fdr`, what is proven and what
    is not, next steps). `LAB brief --lab <folder> <brief>` must pass: every

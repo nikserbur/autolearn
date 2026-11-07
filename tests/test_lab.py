@@ -515,7 +515,7 @@ class Protocol(ProtocolCase):
         names = set()
         for path in [ROOT / "skills" / "research" / "SKILL.md", *sorted((ROOT / "agents").glob("*.md"))]:
             names |= set(re.findall(r"(?:lab\.py|LAB) ([a-z]+)\b", path.read_text()))
-        known = set(re.findall(r'"(\w+)": (?:protocol|selection|status|cmd)', (LAB).read_text()))
+        known = set(re.findall(r'"(\w+)": (?:\w+\.)?cmd_\w+', LAB.read_text()))
         known |= {"env", "trace", "truncate", "sample", "repro"}
         prose = {"is", "command", "commands", "the", "prints", "writes", "keeps", "says"}
         self.assertFalse(names - known - prose, names - known - prose)
@@ -541,13 +541,19 @@ class Protocol(ProtocolCase):
 class SearchTree(ProtocolCase):
     """The experiments as a tree, what to grow next, the research's budgets, and worktrees."""
 
-    def child(self, id, parent, mean, seed, expect=0):
+    def child(self, id, parent, mean, seed, expect=0, run=True):
         self.row(id, "net_per_trade > 0 & trades >= 30", parent=parent)
         self.write(f"research/toy/KB/expect/{id}.md", "| Stage | Should do |\n|---|---|\n| day | earn |\n")
         out = self.p("register", id, expect=expect)
-        if expect == 0:
+        if expect == 0 and run:
             self.series(id, mean, seed)
         return out
+
+    def test_a_row_with_the_wrong_number_of_cells_is_refused(self):
+        path = self.labdir / "KB" / "EXPERIMENTS.tsv"
+        path.write_text(path.read_text() + "E7\t1\tH1\tnet_per_trade > 0\n")
+        self.write("research/toy/KB/expect/E7.md", "x")
+        self.assertIn("cells would land in the wrong columns", self.p("register", "E7", expect=1))
 
     def test_a_parent_must_be_registered_and_the_tree_draws_the_lineage(self):
         self.assertIn("is not a registered experiment", self.child("E2", "E9", 0.1, 2, expect=1))
@@ -584,11 +590,24 @@ class SearchTree(ProtocolCase):
         self.p("register", "E1")
         self.series("E1", 0.6, 1)
         self.child("R2", "", 0.0, 9)
-        for n, seed in enumerate((2, 3, 4), 2):
-            self.child(f"E{n}", "E1", 0.0, seed)
-        out = self.p("next", "--k", "6")
-        self.assertIn("leave E1", out)
-        self.assertIn("draft a new root\tthe best has not changed in 5 runs", out)
+        for n in (2, 3, 4):  # registered in one round, not run yet: E1 is not worked out by them
+            self.child(f"E{n}", "E1", 0.0, n, run=False)
+        out = self.p("next", "--k", "8")
+        self.assertIn("run E2", out)
+        self.assertNotIn("leave E1", out)
+        self.assertIn("3 not finished", out)
+        for n in (2, 3, 4):
+            self.series(f"E{n}", 0.0, n)
+        self.series("E4", 0.0, 4, again=True)
+        out = self.p("next", "--k", "8")
+        self.assertIn("leave E1\t3+ tested children and none better", out)
+        self.assertIn("draft a new root\tno best yet in 5 runs since the last new idea", out)
+
+    def test_next_says_stop_when_the_budget_is_spent(self):
+        self.p("settings", "--max-trials", "1")
+        self.p("register", "E1")
+        self.series("E1", 0.3, 1)
+        self.assertEqual(self.p("next").split("\t")[0], "stop")
 
     def test_runs_stop_at_the_time_budget_and_the_trial_budget(self):
         self.assertIn("run_timeout 2", self.p("settings", "--run-timeout", "2", "--max-trials", "2"))
@@ -606,8 +625,44 @@ class SearchTree(ProtocolCase):
             time.sleep(0.1)
             time_left -= 1
         self.assertFalse(self._alive(grandchild))  # the whole group is stopped
+        self.assertIn("E1\ttimed out", self.p("jobs"))
+        self.assertIn("stopped by the research's time budget", self.p("stats", "E1", expect=1))
         self.series("E1", 0.3, 1, again=True)
         self.assertIn("budget of 2 trials is spent", self.series("E1", 0.3, 1, again=True, expect=1))
+
+    def test_parallel_runs_cannot_both_take_the_last_trial(self):
+        self.p("settings", "--max-trials", "1")
+        for id in ("E1", "E2"):
+            self.row(id, "net_per_trade > 0 & trades >= 30")
+            self.write(f"research/toy/KB/expect/{id}.md", "x")
+            self.p("register", id)
+        procs = [subprocess.Popen([sys.executable, str(LAB), "run", "--lab", str(self.labdir), id, "--code", str(SERIES),
+                                   "--", sys.executable, str(SERIES), str(self.labdir / "results" / id), "0.1", "1"],
+                                  stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True) for id in ("E1", "E2")]
+        outs = [p.communicate(timeout=60)[0] for p in procs]
+        self.assertEqual(sum("budget of 1 trials is spent" in o for o in outs), 1, outs)
+
+    def test_a_run_stopped_from_outside_is_recorded_and_its_command_stopped(self):
+        import signal
+        import time
+        self.p("register", "E1")
+        slow = self.write("slow2.py", "import os, time\nopen('pid.txt', 'w').write(str(os.getpid()))\ntime.sleep(60)\n")
+        proc = subprocess.Popen([sys.executable, str(LAB), "run", "--lab", str(self.labdir), "E1", "--code", slow, "--",
+                                 sys.executable, slow], cwd=self.dir, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        for _ in range(100):
+            if (self.dir / "pid.txt").exists():
+                break
+            time.sleep(0.1)
+        proc.send_signal(signal.SIGTERM)
+        proc.communicate(timeout=60)
+        child = int((self.dir / "pid.txt").read_text())
+        for _ in range(50):
+            if not SearchTree._alive(child):
+                break
+            time.sleep(0.1)
+        self.assertFalse(SearchTree._alive(child))
+        self.assertIn("E1\tinterrupted", self.p("jobs"))
+        self.assertIn("interrupted", self.p("stats", "E1", expect=1))
 
     @staticmethod
     def _alive(pid):
@@ -623,13 +678,22 @@ class SearchTree(ProtocolCase):
         for cmd in (["init", "-q"], ["add", "-A"], ["-c", "user.name=t", "-c", "user.email=t@e", "commit", "-qm", "x"]):
             subprocess.run(["git", "-C", str(repo), *cmd], check=True, capture_output=True)
         out = self.p("worktree", "add", "E1")
+        self.assertIn("on branch exp/toy-E1", out)
         path = self.labdir / "worktrees" / "E1"
         self.assertTrue((path / "research" / "toy" / "KB" / "expect" / "E1.md").exists())
-        self.assertIn("worktrees/", (self.labdir / ".gitignore").read_text())
+        self.assertFalse((self.labdir / ".gitignore").exists())
+        status = subprocess.run(["git", "-C", str(repo), "status", "--porcelain"], capture_output=True, text=True).stdout
+        self.assertNotIn("worktrees", status)
         self.assertIn(str(path.resolve()), self.p("worktree", "list"))
         self.assertIn("exists already", self.p("worktree", "add", "E1", expect=1))
-        self.assertIn("removed", self.p("worktree", "remove", "E1"))
+        (path / "change.txt").write_text("x")
+        subprocess.run(["git", "-C", str(path), "add", "-A"], check=True, capture_output=True)
+        subprocess.run(["git", "-C", str(path), "-c", "user.name=t", "-c", "user.email=t@e", "commit", "-qm", "c"],
+                       check=True, capture_output=True)
+        self.assertIn("its commits stay on branch exp/toy-E1", self.p("worktree", "remove", "E1"))
         self.assertFalse(path.exists())
+        log = subprocess.run(["git", "-C", str(repo), "log", "--oneline", "exp/toy-E1"], capture_output=True, text=True).stdout
+        self.assertEqual(len(log.splitlines()), 2)
 
 
 class ToyResearch(LabCase):

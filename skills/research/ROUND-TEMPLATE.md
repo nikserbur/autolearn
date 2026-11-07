@@ -4,9 +4,11 @@ Started <date>. Derived from: <review R<NN> "Next tests", its discrepancies, KB 
 
 ## Plan
 kind: expectation
-| id | hypothesis | rationale (KB path:line or review) | expected effect | cost (h) | pass criterion | status |
-|---|---|---|---|---|---|---|
-| H<n>.1 | | | | | `<metric> > <number> & ...` | pending |
+Suggested by `lab.py next`: <its lines>.
+
+| id | parent | hypothesis | rationale (KB path:line or review) | expected effect | cost (h) | pass criterion | status |
+|---|---|---|---|---|---|---|---|
+| H<n>.1 | <experiment it changes, or none> | | | | | `<metric> > <number> & ...` | pending |
 
 ## Critique
 kind: conjecture

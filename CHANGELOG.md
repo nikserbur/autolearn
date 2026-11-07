@@ -6,6 +6,35 @@ All notable changes to this project are documented here. The format follows
 with every release, or plugin users will not receive the update. Up to 0.3.1 the project was
 called autolearn.
 
+## [0.9.0] - 2026-11-07
+
+Phase 5 of the [v2 architecture](docs/architecture-v2.md), the last: a search instead of a hill climb.
+An independent review of the first version found three ways it misled or overran; all are closed
+below, each with a test.
+
+### Added
+- The journal's `parent` column makes the experiments a tree; `register` refuses a parent that was
+  never registered and a row whose cells do not match the header. `lab.py tree` draws it.
+- `lab.py next`, in the spirit of AIDE and best-first search: first what is owed (never run,
+  interrupted, ran without a testable series), then debug a crash while its fix chain is short,
+  improve the best lower bounds with at most half the suggestions per branch, leave a node whose
+  three tested children did no better (children not run yet do not count), start a new idea when
+  there is one idea or the best has not changed in five runs since the last new idea, and the
+  trials left; at zero, stop.
+- `lab.py settings --run-timeout S --max-trials N`. Every run gets the same time: past it, the run
+  and everything it started are stopped (SIGTERM, then SIGKILL to the group; `taskkill /T` on
+  Windows), recorded as timed out (exit 124). The trial budget is checked under the ledger's lock,
+  so parallel runs cannot both take the last trial; a sweep inside a run can overshoot it once.
+- `lab.py worktree add|remove|list`: a git working copy per experiment on its own branch
+  (`exp/<research>-<id>`, so commits outlive the copy), hidden through `.git/info/exclude`;
+  `--repo` when the research folder lives outside the project's repository.
+
+### Changed
+- A run stopped from outside (Ctrl-C, SIGTERM, SIGHUP) stops its command too and is recorded as
+  interrupted; a run without a time budget stays in lab.py's process group, so a signal reaches it.
+- `rl-executor` reports exit 124 as the time budget and relays a spent budget; the reviewer checks
+  the budgets and reads the tree; round files carry a `parent` column and what `next` suggested.
+
 ## [0.8.0] - 2026-11-07
 
 Phase 4 of the [v2 architecture](docs/architecture-v2.md): a research survives a crash or a new
