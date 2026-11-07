@@ -110,6 +110,12 @@ class Sample(LabCase):
         self.assertEqual(len({line.split("\t")[1] for line in out[1:]}), 7)
         self.assertEqual(out, self.lab("sample", str(self.dir / "t.tsv"), "--n", "2").splitlines())  # seeded
 
+    def test_prices_do_not_make_every_fill_rare(self):
+        rows = "ts\tstage\taction\toutcome\n" + "".join(f"{i}\tfill\tbuy 1 @ {5000 + i}.25\t\n" for i in range(10)) \
+            + "11\tfill\tsell 1 @ 4999.75\t\n"
+        whys = [line.split("\t")[0] for line in self.lab("sample", self.write("t.tsv", rows), "--n", "2").splitlines()[1:]]
+        self.assertEqual(whys.count("rare"), 1)
+
 
 class Holdout(LabCase):
     def test_second_look_spoils_the_candidate(self):

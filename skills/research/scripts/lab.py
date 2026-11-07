@@ -177,8 +177,9 @@ def cmd_sample(a) -> int:
     scored = sorted((number(r.get(a.metric)), i) for i, r in enumerate(rows) if number(r.get(a.metric)) is not None)
     take("best", [i for _, i in reversed(scored[-a.n:])])
     take("worst", [i for _, i in scored[:a.n]])
-    kinds = collections.Counter((r.get("stage"), r.get("action")) for r in rows)
-    take("rare", [i for i, r in enumerate(rows) if kinds[(r.get("stage"), r.get("action"))] <= 2][:a.n])
+    shape = lambda r: (r.get("stage"), re.sub(r"[-+]?\d[\d.,:]*", "#", str(r.get("action", ""))))  # prices aside
+    kinds = collections.Counter(shape(r) for r in rows)
+    take("rare", [i for i, r in enumerate(rows) if kinds[shape(r)] <= 2][:a.n])
     rest = [i for i in range(len(rows)) if i not in chosen]
     take("random", sorted(random.Random(a.seed).sample(rest, min(a.n, len(rest)))))
     if not picked:

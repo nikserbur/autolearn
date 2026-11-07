@@ -11,26 +11,27 @@ gh repo edit "$repo" \
   --enable-issues
 
 # GitHub allows up to 20 topics: the Claude Code ones people search for, plus this project's niche.
-gh repo edit "$repo" \
-  --add-topic claude-code \
-  --add-topic claude \
-  --add-topic anthropic \
-  --add-topic claude-code-plugin \
-  --add-topic claude-skills \
-  --add-topic agent-skills \
-  --add-topic subagents \
-  --add-topic ai-agents \
-  --add-topic research \
-  --add-topic experiments \
-  --add-topic hypothesis-testing \
-  --add-topic backtesting \
-  --add-topic machine-learning \
-  --add-topic model-training \
-  --add-topic knowledge-base \
-  --add-topic rag \
-  --add-topic graphrag \
-  --add-topic hybrid-search \
-  --add-topic agent-memory \
-  --add-topic context-engineering
+# PUT replaces the whole list, so topics from an earlier description do not pile up.
+gh api --method PUT "repos/$repo/topics" --silent \
+  -f 'names[]=claude-code' \
+  -f 'names[]=claude' \
+  -f 'names[]=anthropic' \
+  -f 'names[]=claude-code-plugin' \
+  -f 'names[]=claude-skills' \
+  -f 'names[]=agent-skills' \
+  -f 'names[]=subagents' \
+  -f 'names[]=ai-agents' \
+  -f 'names[]=research' \
+  -f 'names[]=experiments' \
+  -f 'names[]=hypothesis-testing' \
+  -f 'names[]=backtesting' \
+  -f 'names[]=machine-learning' \
+  -f 'names[]=model-training' \
+  -f 'names[]=knowledge-base' \
+  -f 'names[]=rag' \
+  -f 'names[]=graphrag' \
+  -f 'names[]=hybrid-search' \
+  -f 'names[]=agent-memory' \
+  -f 'names[]=context-engineering'
 
 echo "done: https://github.com/$repo"
